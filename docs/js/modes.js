@@ -147,7 +147,7 @@ export function init({ models, show, setStep, $ }) {
   async function probeLocal() {
     try {
       const t = await (await fetch(`${LOCAL}/api/tools`)).json();
-      localOk = !!t.comfy;
+      localOk = !!(t.comfy || t.ai);
       $('lstatus').innerHTML = localOk ? '<span style="color:#6bd48a">Gerador local encontrado (ComfyUI ok).</span>' : '<span style="color:#ff9a6b">Gerador local ligado, mas sem ComfyUI.</span>';
     } catch {
       localOk = false;
@@ -159,7 +159,8 @@ export function init({ models, show, setStep, $ }) {
     $('lgo').disabled = true;
     try {
       const fd = new FormData();
-      fd.append('engine', 'trellis');
+      fd.append('engine', $('lengine').value);
+      if ($('lengine').value === 'hunyuan') fd.append('views', JSON.stringify({ [lFile.name]: $('lside').value === 'rear' ? 'back' : 'front' }));
       fd.append('lowPolyTris', $('ltris').value);
       fd.append('length', $('ll').value); fd.append('width', $('lw').value); fd.append('height', $('lh').value);
       fd.append('photoSide', $('lside').value);
