@@ -29,6 +29,8 @@
   #hud button { background:rgba(29,32,38,.9); }
   #hud button.on { background:var(--acc); }
   #info { margin-left:auto; background:rgba(29,32,38,.9); padding:7px 10px; border-radius:6px; font-size:12px; }
+  .dz { border:2px dashed var(--line); border-radius:10px; padding:18px 10px; text-align:center; color:var(--muted); cursor:pointer; }
+  .dz.over { border-color:var(--acc); color:var(--fg); }
   small, .hint { color:var(--muted); font-size:12px; line-height:1.4; }
   details { border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   summary { cursor:pointer; font-weight:600; }
@@ -40,7 +42,29 @@
 <body>
 <aside>
   <h1>Foto &rarr; 3D <small>(no navegador)</small></h1>
-  <small>Roda 100% no seu navegador, sem enviar nada para servidor e sem IA. Método: escultura por silhuetas (visual hull) de fotos de <b>mesa giratória</b>. Para fotogrametria completa (COLMAP + OpenMVS) veja o <a href="https://github.com/leonardospy/Image-to-3D-to-Low-Poly">projeto no GitHub</a>.</small>
+  <small>Gera modelo 3D realista e low poly (GLB para Three.js) a partir de fotos. Escolha o modo abaixo. Código: <a href="https://github.com/leonardospy/Image-to-3D-to-Low-Poly">GitHub</a>.</small>
+  <div><label>Modo</label><select id="mode"><option value="single">Qualquer foto — 1 foto, IA no navegador (relevo 3D)</option><option value="local">Meu PC — TRELLIS.2, 3D completo (gerador local ligado)</option><option value="turntable">Mesa giratória — 8 a 72 fotos, sem IA</option></select></div>
+  <div id="single">
+    <small>Funciona com qualquer foto de um objeto, em qualquer ângulo. Duas IAs rodam aqui no navegador (remoção de fundo e profundidade; ~100 MB baixados na 1ª vez). O resultado é um relevo 3D fechado: bom de frente e de 3/4, aproximado nos lados e atrás. Para 3D completo use o modo "Meu PC".</small>
+    <div id="sdrop" class="dz">Arraste uma foto aqui<br><small>ou clique para escolher</small></div>
+    <input id="sfile" type="file" accept="image/*" hidden>
+    <img id="spreview" alt="" style="width:100%;border-radius:6px;display:none">
+    <div><label>Profundidade do relevo: <span id="sdv">45</span>%</label><input id="sdepth" type="range" min="10" max="100" value="45"></div>
+    <div class="row"><div><label>Qualidade</label><select id="sres"><option value="110">Rápida</option><option value="170" selected>Média</option><option value="240">Alta</option></select></div><div><label>Triângulos low poly</label><input id="stris" type="number" value="3000" min="300" max="40000" step="100"></div></div>
+    <button id="sgo" disabled>Gerar modelo 3D</button>
+  </div>
+  <div id="local" hidden>
+    <small id="lstatus">Procurando o gerador local...</small>
+    <div id="ldz" class="dz">Arraste uma foto aqui<br><small>ou clique para escolher</small></div>
+    <input id="lfile" type="file" accept="image/*" hidden>
+    <img id="lpreview" alt="" style="width:100%;border-radius:6px;display:none">
+    <div><label>Medidas reais (m): comprimento, largura, altura</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px"><input id="ll" type="number" step="0.01" value="4.30"><input id="lw" type="number" step="0.01" placeholder="largura"><input id="lh" type="number" step="0.01" placeholder="altura"></div></div>
+    <div class="row"><div><label>A foto mostra a</label><select id="lside"><option value="front">frente / 3/4 frontal</option><option value="rear">traseira</option></select></div><div><label>Triângulos low poly</label><input id="ltris" type="number" value="6000" min="500" max="40000" step="500"></div></div>
+    <button id="lgo" disabled>Gerar 3D completo no meu PC</button>
+    <small>Precisa do gerador local ligado (<code>npm start</code> na pasta do projeto, com o ComfyUI instalado). Sua foto vai só para o seu computador. Veja o README no GitHub.</small>
+  </div>
+  <div id="turn" hidden>
+  <small>Roda 100% no navegador, sem IA: escultura por silhuetas (visual hull). Exige fotos de <b>mesa giratória</b> (objeto estático, câmera parada, fundo liso).</small>
   <details>
     <summary>Como fotografar</summary>
     <div class="hint">
@@ -64,6 +88,7 @@
   <label class="chk"><input type="checkbox" id="rev"> Girou no sentido contrário (inverter)</label>
   <label class="chk"><input type="checkbox" id="facet" checked> Low poly facetado (cor por face)</label>
   <button id="go" disabled>Gerar modelo 3D</button>
+  </div>
   <div id="step"><small>Aguardando fotos</small></div>
   <div id="bar"><i></i></div>
   <div class="row">

@@ -16,6 +16,17 @@ fs.mkdirSync(DATA, { recursive: true });
 
 const jobs = new Map();
 const app = express();
+
+// A pagina do GitHub Pages (e o proprio localhost) podem usar este gerador local: CORS so para essas origens.
+const ORIGINS = [/^https:\/\/leonardospy\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];
+app.use((req, res, next) => {
+  const o = req.headers.origin;
+  if (o && ORIGINS.some((r) => r.test(o))) {
+    res.set({ 'Access-Control-Allow-Origin': o, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Private-Network': 'true' });
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(express.static(path.join(root, 'public')));
 app.use('/files', express.static(DATA));
 

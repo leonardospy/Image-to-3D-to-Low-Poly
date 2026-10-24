@@ -28,21 +28,36 @@ scene.add(new THREE.GridHelper(4, 16, 0x333a46, 0x232830));
 
 const models = {};
 let current = null, wire = false;
+const eachMat = (obj, f) => obj.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(f); });
+let fitted = '';
+function fitCamera(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3()).length() || 1;
+  const key = size.toFixed(2);
+  if (fitted === key) return;
+  fitted = key;
+  const c = box.getCenter(new THREE.Vector3());
+  controls.target.copy(c);
+  camera.position.copy(c).add(new THREE.Vector3(0.7, 0.35, 0.9).multiplyScalar(size * 0.85));
+  camera.near = size / 200; camera.far = size * 50; camera.updateProjectionMatrix();
+}
 function show(name) {
   if (current) scene.remove(current);
   current = models[name] || null;
   if (current) {
     scene.add(current);
-    const g = current.geometry;
-    $('info').textContent = `${Math.round(g.index ? g.index.count / 3 : g.attributes.position.count / 3).toLocaleString('pt-BR')} triângulos`;
+    let tris = 0;
+    current.traverse((o) => { if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+    $('info').textContent = `${Math.round(tris).toLocaleString('pt-BR')} triângulos`;
+    eachMat(current, (m) => (m.wireframe = wire));
+    fitCamera(current);
   }
   $('v1').classList.toggle('on', name === 'realistic');
   $('v2').classList.toggle('on', name === 'lowpoly');
-  if (current) current.material.wireframe = wire;
 }
 $('v1').onclick = () => show('realistic');
 $('v2').onclick = () => show('lowpoly');
-$('wf').onclick = () => { wire = !wire; $('wf').classList.toggle('on', wire); if (current) current.material.wireframe = wire; };
+$('wf').onclick = () => { wire = !wire; $('wf').classList.toggle('on', wire); if (current) eachMat(current, (m) => (m.wireframe = wire)); };
 function resize() {
   const m = canvas.parentElement;
   renderer.setSize(m.clientWidth, m.clientHeight, false);
@@ -64,7 +79,15 @@ function makeMesh(positions, indices, colors, flat) {
   return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
 }
 
-function download(name) {
+async function download(name) {
+  const url = models[name]?.userData?.url; // GLB gerado pelo servidor local: baixa o arquivo original (com PBR, ancoras, etc.)
+  if (url) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await (await fetch(url)).blob());
+    a.download = `${name}.glb`;
+    a.click();
+    return;
+  }
   new GLTFExporter().parse(models[name], (buf) => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
@@ -221,3 +244,7 @@ $('go').onclick = async () => {
   }
   $('go').disabled = false;
 };
+
+
+// Modos extras: foto unica (IA no navegador) e gerador local
+import('./modes.js').then((m) => m.init({ models, show, setStep, $ }));
