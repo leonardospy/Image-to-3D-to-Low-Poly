@@ -1,47 +1,61 @@
-# Resumo: onde paramos (2026-10-24)
+# Resumo do projeto "Gerando 3D" (passagem de bastão)
 
-Objetivo: fotos de um veículo (ângulos, cores e posições variados) → modelo 3D realista + versão low poly, em GLB para Three.js.
+Atualizado em 2026-10-24. Leia este arquivo e o `CLAUDE.md` e já dá para continuar sem reler a conversa.
 
-## Estado atual
-Tudo fica em `D:\Projetos Claude\Gerando 3D` (código, `tools/`, `ai/venv`, `ai/cache`, `data/jobs`). Repositório: https://github.com/leonardospy/Image-to-3D-to-Low-Poly
+## Objetivo
+Receber fotos de um objeto (principalmente **carros**) e gerar um modelo 3D **realista** e outro **low poly**, em **GLB** para Three.js. Para jogos: rodas separadas que giram, faróis separados para receber luz, portas/detalhes visíveis, medidas reais. Tudo deve ficar no **disco D** (`D:\Projetos Claude\Gerando 3D`). Idioma com o usuário: português do Brasil. O usuário liberou o uso de IA (antes pedia "sem IA").
 
-| Motor | Estado |
-|---|---|
-| Fotogrametria COLMAP + OpenMVS (sem IA) | Instalada e detectada (`npm run check`). **Nunca rodada com fotos reais.** |
-| Modo navegador / GitHub Pages (`docs/`, visual hull de mesa giratória) | Funciona com o exemplo gerado. Falta ativar Pages: Settings → Pages → `main` / `/docs`. |
-| IA TripoSR (`ai/run_triposr.py`, integrada ao servidor e à interface) | Roda, mas **qualidade ruim em carros** (volume disforme). Licença MIT. |
-| IA Hunyuan3D-2 (`ai/run_hunyuan.py`, motor padrão da interface) | **Funciona de ponta a ponta**: 1 a 4 fotos (frente/esquerda/trás/direita) → forma de carro + cor projetada das fotos (`ai/project_colors.py`) → GLB realista e low poly. Licença Tencent **não comercial** (não vale na UE, Reino Unido, Coreia do Sul). |
+Repositório: https://github.com/leonardospy/Image-to-3D-to-Low-Poly (branch `main`, GitHub Pages serve a pasta `/docs`: https://leonardospy.github.io/Image-to-3D-to-Low-Poly/).
 
-Teste de referência: `data/jobs/golf_hy/out/{realistic,lowpoly}.glb` (aberto em `http://localhost:3000/?job=golf_hy`, com `npm start`). Dependência fixada: `transformers==4.40.2` (a versão nova quebra o TripoSR).
+## Dois aplicativos no mesmo repositório (não são a mesma versão, de propósito)
+| | Localhost (`npm start` → http://localhost:3000, pasta `public/`) | GitHub Pages (pasta `docs/`) |
+|---|---|---|
+| Roda onde | Node + Python + ComfyUI no PC | só no navegador (arquivos estáticos) |
+| Motores | TRELLIS.2 via ComfyUI (padrão, melhor), Hunyuan3D-2, TripoSR, fotogrametria COLMAP/OpenMVS | "Qualquer foto" (IA no navegador, relevo 2.5D), "Meu PC" (ponte para o localhost), "Mesa giratória" (visual hull) |
+Pages não consegue rodar TRELLIS/Hunyuan (precisam de GPU e GBs de modelos); por isso o modo "Meu PC" chama `http://localhost:3000` por CORS (liberado só para `leonardospy.github.io` e localhost, em `server.js`).
 
-## Próximos passos
-1. Melhorar a cor: com 1 foto 3/4 os lados saem aproximados; testar com várias vistas retas (modelo mv) e com fotos limpas.
-2. Low poly com cor mais nítida (facetado por face, como no modo navegador).
-3. Testar a fotogrametria COLMAP/OpenMVS com um conjunto real de fotos (30+ do mesmo veículo).
-4. Ativar o GitHub Pages.
+## Estado dos motores
+- **TRELLIS.2 via ComfyUI (melhor)**: 1 foto → forma fiel + texturas PBR (cor, normal, metal/rugosidade, AO). Roda duas vezes: realista (~300k faces, textura 4096) e low poly (~6k faces com mapas assados do detalhado, mantém portas/faróis/logo). Testado de ponta a ponta com o Golf. Tempo: ~9 min na 1ª execução (carrega modelos), bem menos depois.
+- **Hunyuan3D-2** (`ai/run_hunyuan.py`): 1 foto (mini) ou 2–4 vistas front/left/back/right (mv). Forma boa, **sem cor própria**: a cor é projetada das fotos (`ai/project_colors.py`, câmeras ortográficas alinhadas aos eixos). Licença **Tencent não comercial** (não vale em UE/UK/Coreia do Sul).
+- **TripoSR**: roda, qualidade ruim em carros. Licença MIT. (Patch `ai/isosurface_patch.py` troca `torchmcubes` por scikit-image.)
+- **Fotogrametria COLMAP 4.2.1 + OpenMVS 2.4** (`lib/pipeline.js`, binários em `tools/`): instalada e detectada (`npm run check`), **nunca rodada com fotos reais**.
+- **Pages "Qualquer foto"**: transformers.js 3.5.1 (CDN) com RMBG-1.4 (remove fundo) + Depth-Anything-V2-small (profundidade) → `docs/js/relief.js` monta relevo fechado (frente boa, lados/trás aproximados). Testado só com o Golf.
 
-## Observações
-- Resultados de IA com 1 foto inventam os lados não vistos; várias vistas (modelo `mv`) reduzem isso.
-- `C:\fototools` ficou como pasta vazia/quase vazia (a remoção foi bloqueada): pode apagar manualmente.
-- Para reinstalar o ambiente de IA: `ai/setup.ps1` (TripoSR); dependências do Hunyuan: `diffusers==0.32.2 opencv-python-headless pymeshlab pygltflib accelerate` no mesmo venv, repositório `ai/Hunyuan3D-2` (git clone da Tencent).
+## Pipeline de carro (o que torna o GLB "pronto para jogo")
+Convenção de saída: **metros, Y para cima, frente em +Z, +X = lado esquerdo, chão em y=0**. Nós: `Body`, `Glass` (só Hunyuan), `Headlight_L/R`, `Taillight_L/R`, `Wheel_FL/FR/RL/RR` (origem no eixo, girar em X; filhos `_tire/_rim/_disc` ou `_mesh`), âncoras vazias `HeadlightAnchor_*`/`TaillightAnchor_*` para prender luzes.
+- Caminho TRELLIS: `lib/ai.js::runTrellisJob` → `lib/comfy.js` (executa workflow) → `ai/car_textured.py` (orienta, escala para as medidas, acha rodas, separa farois; realista: roda original da melhor roda copiada nos 4 cantos; low poly: rodas procedurais de 16 segmentos de `ai/car_wheels.py`) → `lib/car.js::finalizeCar` (materiais PBR, clearcoat só no realista, JPEG, âncoras).
+- Caminho Hunyuan: `runHunyuanJob` → `ai/run_hunyuan.py` → `ai/car_tools.py::build_car` (decimação, cor por vértice espelhada, classificação por região, textura assada no low poly) → `finalizeCar`.
+- Entradas da interface: motor, medidas reais (comprimento/largura/altura), "a foto mostra frente/traseira", triângulos do low poly.
+- Heurísticas (testadas só no Golf!): raio das rodas ≈ 7,6% do comprimento, eixos a ~20% das pontas; farol = região frontal y 42–64% da altura; lanterna traseira idem atrás (no TRELLIS não acha faces: usa âncoras estimadas).
 
-## Modo carro (2026-10-24)
-Motor Hunyuan3D gera a forma; `ai/car_tools.py` trata o carro (sem IA) e `lib/car.js` faz o acabamento PBR:
-- Escala para as medidas reais (comprimento/largura/altura em metros), chão em y=0, frente em +Z, +X = esquerda.
-- Rodas detectadas e **substituídas por rodas procedurais giráveis** (`Wheel_FL/FR/RL/RR`, origem no eixo, girar em X; partes tire/rim/disc).
-- Faróis e lanternas separados (`Headlight_L/R`, `Taillight_L/R`) com material emissivo e âncoras de luz vazias (`HeadlightAnchor_*`, `TaillightAnchor_*`); vidros em `Glass` (transparente).
-- Realista: ~150k triângulos, cor por vértice (espelhada para o lado não fotografado, reflexos atenuados). Low poly: carroceria decimada + textura 2048 assada das fotos, rodas 16 segmentos.
-- Limites: a detecção de rodas/faróis é heurística (proporções + geometria); portas não têm recorte próprio (só aparecem na textura se a foto mostrar); com 1 foto 3/4 a cor dos lados é aproximada.
+## ComfyUI (somente disco D)
+`comfyui/install` (programa + Python 3.13, fora do git), `comfyui/models` (33,4 GB: TRELLIS.2, Pixal3D, VAEs, DINOv3, BiRefNet, MoGe, z_image, qwen), `comfyui/extra_model_paths.yaml`, `comfyui/shared`, `comfyui/cache`, backup da config antiga em `comfyui/backup_config/`. O Comfy Desktop foi reapontado para essas pastas e os originais em `C:\Users\Spy\AppData\Local\Comfy-Desktop` foram apagados (por pedido do usuário). O servidor sobe o ComfyUI sozinho (`ensureComfy`, porta **8189**, log em `data/comfy/comfy.log`). Workflow versionado: `ai/workflows/trellis2_image_to_model.json` (template oficial). `lib/comfy.js::toApi` converte o workflow do editor para a API: resolve `ComfySwitchNode`, trata combos dinâmicos (`COMFY_DYNAMICCOMBO_V3` → entradas `nome.sub`). IDs de nós usados nos overrides: 122 LoadImage, 316 boolean (true = TRELLIS.2), 186 DecimateMesh (`target_face_count`), 288 resolução da textura, 322 Save3DAdvanced (saída `output/3d/<prefixo>_00001.glb`).
 
-## Motor TRELLIS.2 via ComfyUI (2026-10-24) — o melhor até agora
-Usa o ComfyUI do próprio PC (Comfy Desktop, nós nativos TRELLIS.2 já instalados com os modelos int8). O servidor sobe o ComfyUI sozinho em segundo plano (porta 8189, saídas em `data/comfy/`), converte o workflow do template `3d_pixal3d_trellis2_image_to_model` para API (`lib/comfy.js`) e roda duas vezes:
-- Realista: ~300k faces, texturas PBR 4096 (cor, normal, metal/rugosidade, AO).
-- Low poly: ~6k faces com cor/normal/AO assados do modelo detalhado (portas, faróis e logo continuam visíveis pela textura).
-Depois `ai/car_textured.py` + `lib/car.js`: medidas reais, rodas separadas (realista: malha original da melhor roda copiada nos 4 cantos; low poly: rodas procedurais de 16 segmentos), faróis separados, âncoras de luz, materiais PBR. Interface: Motor "IA TRELLIS.2 via ComfyUI" (1 foto; informar se a foto mostra a frente ou a traseira).
-Limites: 1 foto por vez; traseira inventada pela IA (lanternas traseiras não são separadas por geometria, só âncoras estimadas); a detecção de rodas/faróis ainda é heurística; cerca de 8 a 12 minutos na 1ª execução (modelos carregando), depois mais rápido.
+## Ambiente
+- Máquina: Windows 10, RTX 4070 12 GB, Node 24, `uv`. Python do projeto: `ai/venv` (3.11, torch 2.6+cu124, **`transformers==4.40.2` fixado**, rembg, trimesh, scipy, fast-simplification, xatlas, pymeshlab, diffusers 0.32.2). Caches de IA em `ai/cache` (HF_HOME, U2NET_HOME, TORCH_HOME); `config.json` (fora do git) aponta ferramentas e pastas absolutas.
+- Repos clonados (fora do git): `ai/TripoSR`, `ai/Hunyuan3D-2`.
+- Dados de teste: `data/test/golf.jpg` (Wikimedia Commons), jobs em `data/jobs/<id>/out/{realistic,lowpoly}.glb`; ver no viewer local com `http://localhost:3000/?job=<id>`.
+- Testes: `node scripts/test-hull.js`, `node scripts/test-relief.js`, `node scripts/comfy-trellis.mjs <foto> <prefixo> [faces] [texRes]`, `npm run postprocess -- modelo.glb saida 5000`.
 
-## ComfyUI somente no disco D (2026-10-24)
-Instalação e modelos agora ficam em `comfyui/` dentro do projeto (fora do git): `comfyui/install` (programa + Python), `comfyui/models` (33,4 GB, inclui TRELLIS.2/Pixal3D/z_image/qwen), `comfyui/shared` (input/output), `comfyui/cache`. O app Comfy Desktop foi reapontado para essas pastas (backup da configuração antiga em `comfyui/backup_config/`) e as pastas originais em `C:\Users\Spy\AppData\Local\Comfy-Desktop` foram apagadas. O servidor sobe o ComfyUI sozinho a partir daí (porta 8189). Para refazer em outra máquina: instalar o Comfy Desktop, copiar `ComfyUI-Installs/ComfyUI` para `comfyui/install` e os modelos para `comfyui/models`, e gerar `comfyui/extra_model_paths.yaml`.
+## Armadilhas já encontradas
+- Executáveis do OpenMVS falham em caminhos longos (por isso o projeto fica em caminho curto no D).
+- No bash, heredocs comem barras invertidas: para scripts com caminhos Windows use a ferramenta Write.
+- `gltf-transform prune` remove nós vazios (âncoras): usar `keepLeaves: true`; também remove texturas "sólidas" (`pruneSolidTextures:false`). `sharp` ≥ 0.35 (a 0.33 quebra com Node 24). `normals()` do gltf-transform desfaz o weld (usamos normais próprias).
+- Rodar Hunyuan e ComfyUI ao mesmo tempo estoura a VRAM de 12 GB.
+- `C:\fototools` sobrou vazio/quase vazio (remoção bloqueada): apagar manualmente.
+- Commits: `git -c user.name=leonardospy -c user.email=leonardospy14@gmail.com commit ...` e terminar a mensagem com `Co-Authored-By: Claude ... <noreply@anthropic.com>`.
 
-## Pages agora aceita qualquer foto (2026-10-24)
-`docs/` (GitHub Pages) tem 3 modos: **Qualquer foto** (padrão; remoção de fundo RMBG-1.4 + profundidade Depth-Anything-V2 via transformers.js no navegador → relevo 3D fechado com textura da foto, `docs/js/relief.js`), **Meu PC** (o site fala com o gerador local em `http://localhost:3000` por CORS e usa o TRELLIS.2/ComfyUI; só funciona com `npm start` ligado) e **Mesa giratória** (visual hull, o modo antigo). Limite do modo "Qualquer foto": é 2.5D (frente boa, laterais/trás aproximadas); 3D completo só no modo "Meu PC". Teste: `node scripts/test-relief.js`.
+## O que ainda não foi testado / limitações
+1. Fotogrametria COLMAP/OpenMVS com fotos reais (30+ do mesmo carro).
+2. Detecção de rodas/faróis em outros carros (picape, esportivo baixo); só o Golf foi validado. Lanternas traseiras só têm âncora estimada; portas não têm recorte próprio (visíveis pela textura/normal).
+3. Pages: o modo "Meu PC" foi só testado até a detecção do servidor (uma geração completa por ele e o seletor TRELLIS/Hunyuan não foram exercitados); layout mobile não foi testado.
+4. TRELLIS aceita 1 foto; sem fusão de várias fotos.
+5. O modo "Qualquer foto" do Pages é 2.5D (não substitui o 3D completo).
+
+## Próximos passos sugeridos
+- Rodar o TRELLIS com outros carros e ajustar as heurísticas (raio de roda, regiões de faróis); separar lanternas traseiras de forma confiável.
+- Testar o modo "Meu PC" a partir da página publicada (Chrome/Edge/Firefox; Safari bloqueia https→localhost).
+- Opcional: unificar a interface de `public/` e `docs/`; perfil de foto lateral no TRELLIS; exportar sem o tratamento de carro para outros objetos (modo "objeto genérico").
+
+## Estado dos processos ao encerrar esta sessão
+Servidor `node server.js` na porta 3000 e ComfyUI na 8189 estavam ligados; podem ser parados sem perda (o servidor religa o ComfyUI quando precisa). Tudo está commitado e enviado (último commit `0223c54`), exceto este resumo e o `CLAUDE.md` enquanto não forem commitados.
