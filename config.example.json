@@ -1,0 +1,8 @@
+{
+  "colmap": "C:/Ferramentas/COLMAP/COLMAP.bat",
+  "interfaceColmap": "C:/Ferramentas/OpenMVS/InterfaceCOLMAP.exe",
+  "densifyPointCloud": "C:/Ferramentas/OpenMVS/DensifyPointCloud.exe",
+  "reconstructMesh": "C:/Ferramentas/OpenMVS/ReconstructMesh.exe",
+  "refineMesh": "C:/Ferramentas/OpenMVS/RefineMesh.exe",
+  "textureMesh": "C:/Ferramentas/OpenMVS/TextureMesh.exe"
+}

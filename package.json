@@ -1,0 +1,24 @@
+{
+  "name": "foto-para-3d",
+  "version": "1.0.0",
+  "description": "Fotogrametria sem IA: fotos -> modelo 3D realista + low poly (GLB) para Three.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node scripts/check-tools.js",
+    "postprocess": "node scripts/postprocess-cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.0.0",
+    "@gltf-transform/extensions": "^4.0.0",
+    "@gltf-transform/functions": "^4.0.0",
+    "express": "^4.19.2",
+    "meshoptimizer": "^0.22.0",
+    "multer": "^2.5.0",
+    "obj2gltf": "^3.1.6",
+    "sharp": "^0.35.5"
+  }
+}

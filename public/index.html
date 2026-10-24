@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foto para 3D</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e7e9ee; --muted:#8b93a1; --acc:#4da3ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px system-ui,sans-serif; background:var(--bg); color:var(--fg); display:grid; grid-template-columns:340px 1fr; height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow:auto; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size:18px; margin:0; }
+  label { display:block; color:var(--muted); font-size:12px; margin-bottom:4px; }
+  select,input[type=number] { width:100%; padding:7px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+  #drop { border:2px dashed var(--line); border-radius:10px; padding:22px 10px; text-align:center; color:var(--muted); cursor:pointer; }
+  #drop.over { border-color:var(--acc); color:var(--fg); }
+  button { padding:9px 12px; border:0; border-radius:6px; background:var(--acc); color:#fff; font-weight:600; cursor:pointer; }
+  button.sec { background:var(--line); color:var(--fg); }
+  button:disabled { opacity:.45; cursor:default; }
+  #bar { height:8px; background:var(--bg); border-radius:4px; overflow:hidden; }
+  #bar i { display:block; height:100%; width:0; background:var(--acc); transition:width .4s; }
+  #log { background:#0d0f12; border-radius:6px; padding:8px; font:11px ui-monospace,monospace; height:160px; overflow:auto; white-space:pre-wrap; color:#aab; }
+  main { position:relative; }
+  canvas { width:100%; height:100%; display:block; }
+  #hud { position:absolute; top:12px; left:12px; right:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  #hud button { background:rgba(29,32,38,.9); }
+  #hud button.on { background:var(--acc); }
+  #info { margin-left:auto; background:rgba(29,32,38,.9); padding:7px 10px; border-radius:6px; font-size:12px; }
+  small { color:var(--muted); }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Foto &rarr; 3D</h1>
+  <small>Fotogrametria clássica (COLMAP + OpenMVS), sem IA. Gera GLB realista e low poly.</small>
+  <div id="tools"></div>
+  <div id="drop">Arraste as fotos aqui<br><small>ou clique para escolher (8+ fotos, ideal 30–80)</small></div>
+  <input id="files" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
+  <div id="count"><small>Nenhuma foto selecionada</small></div>
+  <div><label>Qualidade</label>
+    <select id="quality"><option value="rapido">Rápido (teste)</option><option value="medio" selected>Médio</option><option value="alto">Alto (lento)</option></select></div>
+  <div><label>Triângulos do low poly</label><input id="tris" type="number" value="5000" min="300" max="100000" step="500"></div>
+  <button id="go" disabled>Gerar modelo 3D</button>
+  <button id="cancel" class="sec" hidden>Cancelar</button>
+  <div id="step"><small>Aguardando</small></div>
+  <div id="bar"><i></i></div>
+  <div id="log"></div>
+  <div style="display:flex;gap:8px">
+    <button class="sec" id="dl1" disabled style="flex:1">Baixar realista</button>
+    <button class="sec" id="dl2" disabled style="flex:1">Baixar low poly</button>
+  </div>
+  <button class="sec" id="open">Abrir um GLB local no visualizador</button>
+  <input id="glbfile" type="file" accept=".glb,.gltf" hidden>
+</aside>
+<main>
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <button id="v1" class="on">Realista</button>
+    <button id="v2">Low poly</button>
+    <button id="wf">Wireframe</button>
+    <span id="info"></span>
+  </div>
+</main>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
