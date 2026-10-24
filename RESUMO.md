@@ -32,3 +32,10 @@ Motor Hunyuan3D gera a forma; `ai/car_tools.py` trata o carro (sem IA) e `lib/ca
 - Faróis e lanternas separados (`Headlight_L/R`, `Taillight_L/R`) com material emissivo e âncoras de luz vazias (`HeadlightAnchor_*`, `TaillightAnchor_*`); vidros em `Glass` (transparente).
 - Realista: ~150k triângulos, cor por vértice (espelhada para o lado não fotografado, reflexos atenuados). Low poly: carroceria decimada + textura 2048 assada das fotos, rodas 16 segmentos.
 - Limites: a detecção de rodas/faróis é heurística (proporções + geometria); portas não têm recorte próprio (só aparecem na textura se a foto mostrar); com 1 foto 3/4 a cor dos lados é aproximada.
+
+## Motor TRELLIS.2 via ComfyUI (2026-10-24) — o melhor até agora
+Usa o ComfyUI do próprio PC (Comfy Desktop, nós nativos TRELLIS.2 já instalados com os modelos int8). O servidor sobe o ComfyUI sozinho em segundo plano (porta 8189, saídas em `data/comfy/`), converte o workflow do template `3d_pixal3d_trellis2_image_to_model` para API (`lib/comfy.js`) e roda duas vezes:
+- Realista: ~300k faces, texturas PBR 4096 (cor, normal, metal/rugosidade, AO).
+- Low poly: ~6k faces com cor/normal/AO assados do modelo detalhado (portas, faróis e logo continuam visíveis pela textura).
+Depois `ai/car_textured.py` + `lib/car.js`: medidas reais, rodas separadas (realista: malha original da melhor roda copiada nos 4 cantos; low poly: rodas procedurais de 16 segmentos), faróis separados, âncoras de luz, materiais PBR. Interface: Motor "IA TRELLIS.2 via ComfyUI" (1 foto; informar se a foto mostra a frente ou a traseira).
+Limites: 1 foto por vez; traseira inventada pela IA (lanternas traseiras não são separadas por geometria, só âncoras estimadas); a detecção de rodas/faróis ainda é heurística; cerca de 8 a 12 minutos na 1ª execução (modelos carregando), depois mais rápido.

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runJob } from './lib/pipeline.js';
 import { buildModels } from './lib/postprocess.js';
 import { locateTools } from './lib/tools.js';
-import { runAiJob, runHunyuanJob, aiPython } from './lib/ai.js';
+import { runAiJob, runHunyuanJob, runTrellisJob, comfyAvailable, aiPython } from './lib/ai.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8')); } catch {}
@@ -39,13 +39,15 @@ function emit(job) {
   job.clients.forEach((res) => res.write(data));
 }
 
-app.get('/api/tools', (_req, res) => res.json({ ...locateTools(), ai: !!aiPython() }));
+app.get('/api/tools', (_req, res) => res.json({ ...locateTools(), ai: !!aiPython(), comfy: comfyAvailable() }));
 
 app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   const files = req.files || [];
   const hy = req.body.engine === 'hunyuan';
-  const ai = req.body.engine === 'ai' || hy;
+  const tr = req.body.engine === 'trellis';
+  const ai = req.body.engine === 'ai' || hy || tr;
   if (ai ? files.length < 1 : files.length < 8) return res.status(400).json({ error: ai ? 'Envie pelo menos 1 foto.' : 'Envie pelo menos 8 fotos (ideal: 30-80).' });
+  if (tr && !comfyAvailable()) return res.status(400).json({ error: 'ComfyUI nao encontrado (veja README).' });
   if (ai && !aiPython()) return res.status(400).json({ error: 'Ambiente de IA nao instalado (veja ai/README.md).' });
   const job = {
     id: req.jobId, dir: path.join(DATA, req.jobId), status: 'running', step: 'Na fila', progress: 0,
@@ -61,7 +63,10 @@ app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   const views = {};
   for (const f of files) if (viewMap[f.originalname]) views[viewMap[f.originalname]] = f.path;
   if (hy && !Object.keys(views).length) views.front = pick.path;
-  const task = hy
+  const dims = { lengthM: +req.body.length || 4.3, widthM: +req.body.width || 0, heightM: +req.body.height || 0 };
+  const task = tr
+    ? runTrellisJob(job, pick.path, { lowPolyTris: opts.lowPolyTris, photoSide: req.body.photoSide, ...dims }, log, step, job.abort.signal)
+    : hy
     ? runHunyuanJob(job, views, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0', lengthM: +req.body.length || 4.3, widthM: +req.body.width || 0, heightM: +req.body.height || 0 }, log, step, job.abort.signal)
     : ai
     ? runAiJob(job, pick.path, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0' }, log, step, job.abort.signal)
