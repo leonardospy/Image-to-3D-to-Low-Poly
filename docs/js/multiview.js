@@ -184,7 +184,7 @@ function occupied(grid) {
 
 // IoU entre a silhueta projetada dos voxels e a mascara (nivel baixo)
 let splatBuf = null;
-function silhouetteIoU(pts, vs, c, lo) {
+export function silhouetteIoU(pts, vs, c, lo) {
   const W = lo.w, H = lo.h, f = lo.f;
   if (!splatBuf || splatBuf.length < W * H) splatBuf = new Uint8Array(W * H);
   const img = splatBuf;
@@ -595,7 +595,8 @@ function zbuffer(I, pr, W, H, f) {
 
 // Escolhe a melhor foto para cada triangulo (visivel, de frente, longe da borda da silhueta), suaviza a escolha entre
 // vizinhos e calcula ganhos de cor por foto para disfarcar emendas. Devolve tudo o que o montador do atlas precisa.
-export async function chooseViews(P, I, views, cams, { eps, colors, tick = async () => {}, onProgress = () => {} }) {
+// fill: triangulos que nenhuma foto ve recebem o rotulo views.length (cor de preenchimento) em vez da foto mais de frente
+export async function chooseViews(P, I, views, cams, { eps, colors, fill = false, tick = async () => {}, onProgress = () => {} }) {
   const T = I.length / 3, nv = views.length, KC = 4;
   const candV = new Int16Array(T * KC).fill(-1), candQ = new Float32Array(T * KC);
   const fn = new Float32Array(T * 3), cen = new Float32Array(T * 3);
@@ -657,6 +658,7 @@ export async function chooseViews(P, I, views, cams, { eps, colors, tick = async
   const label = new Int16Array(T);
   for (let t = 0; t < T; t++) {
     if (candV[t * KC] >= 0) { label[t] = candV[t * KC]; continue; }
+    if (fill) { label[t] = nv; continue; }
     let bv = 0, bq = -2;
     for (let v = 0; v < nv; v++) { const d = proj[v].B.d, q = fn[t * 3] * d[0] + fn[t * 3 + 1] * d[1] + fn[t * 3 + 2] * d[2]; if (q > bq) { bq = q; bv = v; } }
     label[t] = bv; candV[t * KC] = bv; candQ[t * KC] = 0.01;
@@ -730,8 +732,10 @@ export async function chooseViews(P, I, views, cams, { eps, colors, tick = async
 export function layoutAtlas(P, I, choice, views, atlasSize, pad = 6) {
   const { label, proj } = choice, nv = views.length;
   const rect = Array.from({ length: nv }, () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, used: false }));
+  let anyFill = false;
   for (let t = 0; t < I.length / 3; t++) {
     const v = label[t], r = rect[v], pr = proj[v];
+    if (v === nv) { anyFill = true; continue; }
     r.used = true;
     for (let e = 0; e < 3; e++) {
       const q = I[t * 3 + e];
@@ -747,11 +751,12 @@ export function layoutAtlas(P, I, choice, views, atlasSize, pad = 6) {
     r.x1 = Math.min(vw.w, Math.ceil(r.x1) + pad); r.y1 = Math.min(vw.h, Math.ceil(r.y1) + pad);
     items.push({ v, ...r, w: Math.max(1, r.x1 - r.x0), h: Math.max(1, r.y1 - r.y0) });
   });
+  if (anyFill) items.push({ v: nv, fill: true, x0: 0, y0: 0, w: 8, h: 8 }); // retalho de cor solida
   const pack = (k) => {
     const order = [...items].sort((a, b) => b.h - a.h);
     let x = 0, y = 0, rowH = 0;
     for (const it of order) {
-      const w = Math.ceil(it.w * k) + 2, h = Math.ceil(it.h * k) + 2;
+      const w = it.fill ? 10 : Math.ceil(it.w * k) + 2, h = it.fill ? 10 : Math.ceil(it.h * k) + 2;
       if (w > atlasSize) return false;
       if (x + w > atlasSize) { x = 0; y += rowH; rowH = 0; }
       if (y + h > atlasSize) return false;
@@ -778,7 +783,8 @@ export function layoutAtlas(P, I, choice, views, atlasSize, pad = 6) {
         key.set(kq, id);
         pos.push(P[q * 3], P[q * 3 + 1], P[q * 3 + 2]);
         src.push(q);
-        uv.push((it.ax + (pr.U[q] - it.x0) * it.k) / atlasSize, 1 - (it.ay + (pr.R[q] - it.y0) * it.k) / atlasSize);
+        if (it.fill) uv.push((it.ax + 4) / atlasSize, 1 - (it.ay + 4) / atlasSize);
+        else uv.push((it.ax + (pr.U[q] - it.x0) * it.k) / atlasSize, 1 - (it.ay + (pr.R[q] - it.y0) * it.k) / atlasSize);
       }
       idx[t * 3 + e] = id;
     }
@@ -812,4 +818,22 @@ export function estimateDirection(grays) {
   }
   if (!total || Math.abs(votes) < total * 0.3) return 0;
   return votes > 0 ? 1 : -1;
+}
+
+// mantem so a maior peca conexa da malha (remove fragmentos soltos)
+export function largestComponent(P, I) {
+  const n = P.length / 3, parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  for (let t = 0; t < I.length; t += 3) {
+    const a = find(I[t]), b = find(I[t + 1]), c = find(I[t + 2]);
+    parent[b] = a; parent[find(c)] = a;
+  }
+  const count = new Int32Array(n);
+  for (let t = 0; t < I.length; t += 3) count[find(I[t])]++;
+  let best = 0;
+  for (let i = 1; i < n; i++) if (count[i] > count[best]) best = i;
+  const keep = [];
+  for (let t = 0; t < I.length; t += 3) if (find(I[t]) === best) keep.push(I[t], I[t + 1], I[t + 2]);
+  return compact(P, Uint32Array.from(keep));
 }

@@ -4,6 +4,8 @@ import { MeshoptSimplifier } from './vendor/meshopt_simplifier.module.js';
 import * as ai from './ai.js';
 import * as MV from './multiview.js';
 import { parseScene } from './scene-text.js';
+import * as ONE from './onephoto.js';
+import { buildRelief } from './relief.js';
 
 const D2R = Math.PI / 180;
 const TEXMAX = matchMedia('(pointer: coarse)').matches ? 1024 : 1280; // maior lado das fotos usadas na textura (menor no celular)
@@ -59,8 +61,8 @@ export function init({ models, show, setStep, $ }) {
       $('mthumbs').append(cell);
       photos.push({ name: f.name, bitmap, w, h, mask: null, thumb, cell, view });
     }
-    if (photos.length < 4) {
-      setStep('Use pelo menos 4 fotos (ideal: 16 a 36). Para uma foto só, use o modo "Qualquer foto".', 0);
+    if (photos.length > 1 && photos.length < 4) {
+      setStep('Use 1 foto (as outras vistas são geradas) ou pelo menos 4 (ideal: 16 a 36).', 0);
       return;
     }
     await computeMasks(job);
@@ -92,7 +94,9 @@ export function init({ models, show, setStep, $ }) {
         drawThumbMask(p);
         await tick();
       }
-      setStep(`${photos.length} fotos recortadas. Confira os recortes e gere o modelo.`, 100);
+      setStep(photos.length === 1
+        ? '1 foto recortada. As outras vistas serão geradas a partir dela (simetria, molde da categoria e profundidade). Diga o que é na descrição e marque a vista se souber.'
+        : `${photos.length} fotos recortadas. Confira os recortes e gere o modelo.`, 100);
       $('mgo').disabled = false;
     } catch (e) {
       console.error(e);
@@ -144,7 +148,8 @@ export function init({ models, show, setStep, $ }) {
     return { g, m, W, H };
   }
 
-  function texturedMesh(ph, P, I, N, views, cams, choice, atlasSize, mat) {
+  // ph[v].flip: vista gerada espelhando a foto; fillColor: cor das partes que nenhuma vista mostra
+  function texturedMesh(ph, P, I, N, views, cams, choice, atlasSize, mat, fillColor = '#808080') {
     const lay = MV.layoutAtlas(P, I, choice, views, atlasSize);
     const atlas = document.createElement('canvas');
     atlas.width = atlas.height = atlasSize;
@@ -152,8 +157,16 @@ export function init({ models, show, setStep, $ }) {
     actx.fillStyle = '#808080';
     actx.fillRect(0, 0, atlasSize, atlasSize);
     for (const it of lay.items) {
+      if (it.fill) { actx.fillStyle = fillColor; actx.fillRect(it.ax - 1, it.ay - 1, 10, 10); continue; }
       const dw = Math.max(1, Math.round(it.w * it.k)), dh = Math.max(1, Math.round(it.h * it.k));
-      actx.drawImage(ph[it.v].bitmap, it.x0, it.y0, it.w, it.h, it.ax, it.ay, dw, dh);
+      const src = ph[it.v];
+      if (src.flip) {
+        actx.save();
+        actx.translate(it.ax + dw, it.ay);
+        actx.scale(-1, 1);
+        actx.drawImage(src.bitmap, src.w - it.x1, it.y0, it.w, it.h, 0, 0, dw, dh);
+        actx.restore();
+      } else actx.drawImage(src.bitmap, it.x0, it.y0, it.w, it.h, it.ax, it.ay, dw, dh);
       const g = choice.gains[it.v];
       if (Math.abs(g[0] - 1) + Math.abs(g[1] - 1) + Math.abs(g[2] - 1) > 0.01) {
         const im = actx.getImageData(it.ax, it.ay, dw, dh), d = im.data;
@@ -215,6 +228,187 @@ export function init({ models, show, setStep, $ }) {
     mesh.geometry.computeBoundingBox(); mesh.geometry.computeBoundingSphere();
   }
 
+  // ------------------------------------------------------------ 1 foto -> vistas geradas -> 3D
+  async function depthOf(p) {
+    const pipe = await ai.loadDepth(setStep);
+    const tf = await ai.getTF();
+    const cv = document.createElement('canvas');
+    cv.width = p.w; cv.height = p.h;
+    cv.getContext('2d').drawImage(p.bitmap, 0, 0);
+    const out = await pipe(tf.RawImage.fromCanvas(cv).rgb());
+    return Uint8Array.from((await out.depth.resize(p.w, p.h)).data);
+  }
+
+  const flipSmall = (sm) => {
+    const rgba = new Uint8ClampedArray(sm.rgba.length);
+    for (let y = 0; y < sm.h; y++) for (let x = 0; x < sm.w; x++) for (let c = 0; c < 4; c++) rgba[(y * sm.w + x) * 4 + c] = sm.rgba[(y * sm.w + sm.w - 1 - x) * 4 + c];
+    return { ...sm, rgba };
+  };
+
+  // cor tipica do objeto (mediana dos pixels recortados): preenche o que nenhuma vista mostra
+  function objectColor(p) {
+    const sm = p.small, ch = [[], [], []];
+    for (let y = 0; y < sm.h; y++) for (let x = 0; x < sm.w; x++) {
+      if (p.mask[Math.min(p.h - 1, Math.floor(y / sm.f)) * p.w + Math.min(p.w - 1, Math.floor(x / sm.f))] < 230) continue;
+      for (let c = 0; c < 3; c++) ch[c].push(sm.rgba[(y * sm.w + x) * 4 + c]);
+    }
+    const med = ch.map((a) => (a.sort((q, r) => q - r)[a.length >> 1] ?? 128));
+    return `rgb(${med.join(',')})`;
+  }
+
+  // miniaturas do modelo pronto, de 8 angulos: as vistas que a foto nao mostrava
+  function showGenerated(obj) {
+    const S = 160, r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+    r.setSize(S, S, false);
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.4);
+    dl.position.set(2, 4, 3);
+    sc.add(dl, obj.clone());
+    const box = new THREE.Box3().setFromObject(obj), c = box.getCenter(new THREE.Vector3()), R = box.getSize(new THREE.Vector3()).length() / 2;
+    const cam = new THREE.PerspectiveCamera(35, 1, R / 50, R * 20);
+    const wrap = document.createElement('div');
+    wrap.className = 'mgen';
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4, d = R * 2.8;
+      cam.position.set(c.x + Math.sin(a) * d, c.y + d * 0.35, c.z + Math.cos(a) * d);
+      cam.lookAt(c);
+      r.render(sc, cam);
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = S;
+      cv.getContext('2d').drawImage(r.domElement, 0, 0);
+      wrap.append(cv);
+    }
+    r.dispose();
+    $('mgen').innerHTML = '<label>Vistas geradas a partir da foto</label>';
+    $('mgen').append(wrap);
+  }
+
+  // objeto sem simetria nem molde: relevo a partir da profundidade (frente fiel, verso aproximado)
+  async function reliefOne(p, hint, Q, t0) {
+    const depth = await depthOf(p);
+    setStep('Montando o relevo 3D...', 70); await tick();
+    const cv = document.createElement('canvas');
+    cv.width = p.w; cv.height = p.h;
+    cv.getContext('2d').drawImage(p.bitmap, 0, 0);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.userData.mimeType = 'image/jpeg';
+    const make = (cells, flat) => {
+      const r = buildRelief({ mask: p.mask, depth, w: p.w, h: p.h }, { cells, thickness: 0.45 });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(r.positions, 3));
+      g.setAttribute('uv', new THREE.BufferAttribute(r.uvs, 2));
+      g.setIndex(new THREE.BufferAttribute(r.indices, 1));
+      g.computeVertexNormals();
+      const size = +$('msize').value || hint.size || 1;
+      g.scale(size / 2, size / 2, size / 2);
+      g.computeBoundingBox();
+      g.translate(0, -g.boundingBox.min.y, 0);
+      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: hint.rough ?? 0.6, metalness: hint.metal ?? 0, flatShading: flat }));
+      m.name = 'Model';
+      return m;
+    };
+    models.realistic = new THREE.Group().add(make(Math.round(Q.res * 1.2), false));
+    models.lowpoly = new THREE.Group().add(make(Math.max(8, Math.round(Math.sqrt(+$('mtris').value / 6))), true));
+    show('realistic');
+    $('dl1').disabled = $('dl2').disabled = false;
+    showGenerated(models.realistic);
+    setStep(`Concluído em ${Math.round((performance.now() - t0) / 1000)} s. Sem simetria nem categoria conhecida, 1 foto dá um relevo (verso aproximado). Diga o que é na descrição (ex.: "carro", "cadeira", "garrafa") para gerar as outras vistas.`, 100);
+  }
+
+  async function generateOne({ hint, Q, sym, t0 }) {
+    const p = photos[0];
+    const view = MV.prepareViews([{ mask: p.mask, w: p.w, h: p.h }])[0];
+    const mode = sym === 'rot' ? 'rot' : sym === 'mirror' ? 'mirror' : 'none';
+    if (mode === 'none') return reliefOne(p, hint, Q, t0);
+
+    let T, cam, fitNote = '';
+    if (mode === 'rot') {
+      ({ T, cam } = ONE.revolveTemplate(view, hint.dims?.H || hint.size || 0.3));
+    } else {
+      // molde: medidas tipicas da categoria (ou proporcoes da silhueta), escaladas pelo tamanho/medidas informados
+      let dims = ONE.DIMS[hint.category] ? [...ONE.DIMS[hint.category]] : null;
+      if (!dims) { const b = view.box, r = (b.x1 - b.x0) / (b.y1 - b.y0); dims = [r, 1, r]; }
+      if (hint.size) { const k = hint.size / Math.max(...dims); dims = dims.map((d) => d * k); }
+      const D = hint.dims || {};
+      if (D.W) dims[0] = D.W;
+      if (D.H) dims[1] = D.H;
+      if (D.L) dims[2] = D.L;
+      const az = p.view.value !== '' ? +p.view.value * D2R : null;
+      setStep('Encaixando o molde da categoria na foto...', 8); await tick();
+      const fit = await ONE.fitTemplate(view, hint.category === 'carro' ? 'carro' : 'box', {
+        dims, dimsGiven: !!(D.W && D.H && D.L), az, tick,
+        onProgress: (f) => setStep('Encaixando o molde da categoria na foto...', 8 + 25 * f),
+      });
+      ({ T, cam } = fit);
+      const deg = Math.round((((cam.az / D2R) % 360) + 360) % 360);
+      p.cell.lastChild.textContent = `${deg}° · ${Math.round(fit.fit * 100)}%`;
+      fitNote = `Vista estimada: ${deg}° (elevação ${Math.round(cam.el / D2R)}°), encaixe do molde ${Math.round(fit.fit * 100)}%.`;
+    }
+
+    setStep('Gerando as outras vistas e esculpindo o volume...', 36); await tick();
+    const vv = ONE.virtualViews(view, cam, mode);
+    const grid = ONE.buildField(vv.views, vv.cams, T, Q.res);
+    if (mode === 'mirror') {
+      setStep('Cavando reentrâncias com a profundidade da foto...', 44); await tick();
+      const depth = await depthOf(p);
+      ONE.carveDepth(grid, vv.views[0], vv.cams[0], depth);
+      ONE.carveDepth(grid, vv.views[1], vv.cams[1], ONE.flipDepth(depth, p.w, p.h));
+    }
+    const ph = vv.flip.map((fl) => (fl ? { ...p, flip: true, small: flipSmall(p.small) } : p));
+    window.__mv = { photos: ph, views: vv.views, cams: vv.cams, MV, models, T };
+    const realMesh = await finish({
+      grid, views: vv.views, cams: vv.cams, ph, symInfo: null, hint, Q, t0, fillColor: objectColor(p), smoothIt: 14,
+      sizeOverride: +$('msize').value || Math.max(T.W, T.H, T.L),
+      note: `1 foto: ${mode === 'mirror' ? 'lado oposto gerado por simetria' : 'giro gerado por simetria de revolução'}, partes não vistas pelo molde. ${fitNote}`,
+    });
+    showGenerated(realMesh.parent);
+  }
+
+  // malha, textura (realista e low poly), transformacao de saida e exibicao: comum a "varias fotos" e "1 foto"
+  async function finish({ grid, views, cams, ph, symInfo, hint, Q, t0, note, fillColor = null, sizeOverride = 0, smoothIt = 8 }) {
+    setStep('Extraindo a malha...', 56); await tick();
+    let { positions, indices } = MV.surfaceNets(grid);
+    if (!indices.length) throw new Error('Nada restou do volume: confira os recortes e a ordem das fotos (devem seguir a volta em torno do objeto).');
+    ({ positions, indices } = MV.largestComponent(positions, indices));
+    positions = MV.taubin(positions, indices, smoothIt);
+    await MeshoptSimplifier.ready;
+    const decimate = (P, I, faces, err) => {
+      if (I.length / 3 <= faces) return { positions: P, indices: I };
+      const [simp] = MeshoptSimplifier.simplify(I, P, 3, faces * 3, err);
+      return MV.compact(P, simp);
+    };
+    const real = decimate(positions, indices, Q.faces, 0.01);
+    const low = decimate(positions, indices, Math.max(200, +$('mtris').value), 0.2);
+
+    const colors = ph.map((p) => p.small);
+    const mat = { rough: hint.rough ?? 0.6, metal: hint.metal ?? 0, name: hint.category === 'carro' ? 'Body' : 'Model' };
+    const build = async (mesh, atlasSize, p0, p1, label) => {
+      const N = MV.vertexNormals(mesh.positions, mesh.indices);
+      const choice = await MV.chooseViews(mesh.positions, mesh.indices, views, cams, {
+        eps: grid.vs * 2.5, colors, tick, fill: !!fillColor,
+        onProgress: (f) => setStep(`Texturizando o ${label} com as fotos...`, p0 + (p1 - p0) * f),
+      });
+      return texturedMesh(ph, mesh.positions, mesh.indices, N, views, cams, choice, atlasSize, mat, fillColor);
+    };
+    const realMesh = await build(real, Q.atlas, 60, 85, 'modelo realista');
+    const lowMesh = await build(low, Q.lowAtlas, 86, 97, 'low poly');
+
+    const size = sizeOverride || +$('msize').value || hint.size || 1;
+    const T = outputTransform(real.positions, symInfo, size, hint.dims);
+    applyTransform(realMesh, T);
+    applyTransform(lowMesh, T);
+    models.realistic = new THREE.Group().add(realMesh);
+    models.lowpoly = new THREE.Group().add(lowMesh);
+    models.realistic.name = models.lowpoly.name = 'Root';
+    show('realistic');
+    $('dl1').disabled = $('dl2').disabled = false;
+    const dims = T.dims.map((d) => d.toLocaleString('pt-BR', { maximumFractionDigits: 2 })).join(' × ');
+    setStep(`Concluído em ${Math.round((performance.now() - t0) / 1000)} s. ${note} Medidas (L × A × C): ${dims} m.`, 100);
+    return realMesh;
+  }
+
   $('mgo').onclick = async () => {
     $('mgo').disabled = true;
     const t0 = performance.now();
@@ -225,6 +419,7 @@ export function init({ models, show, setStep, $ }) {
       const span = +($('mspan').value === 'auto' ? hint.span || 360 : $('mspan').value) * D2R;
       const sym = $('msym').value === 'auto' ? hint.sym || 'none' : $('msym').value;
       const start = (hint.start || 0) * D2R;
+      if (n === 1) return await generateOne({ hint, Q, sym, t0 });
 
       // vistas informadas por foto: as fotos sao reordenadas pelo angulo; as sem vista ficam entre as vizinhas
       const given = photos.map((p) => (p.view.value === '' ? null : +p.view.value * D2R));
@@ -286,48 +481,13 @@ export function init({ models, show, setStep, $ }) {
       if (sym === 'mirror') { setStep('Aplicando simetria espelhada...', 52); await tick(); symInfo = MV.mirrorSymmetry(grid); }
       if (sym === 'rot') { setStep('Aplicando simetria de revolução...', 52); await tick(); MV.rotationalSymmetry(grid); }
 
-      setStep('Extraindo a malha...', 56); await tick();
-      let { positions, indices } = MV.surfaceNets(grid);
-      if (!indices.length) throw new Error('Nada restou do volume: confira os recortes e a ordem das fotos (devem seguir a volta em torno do objeto).');
-      positions = MV.taubin(positions, indices, 8);
-      await MeshoptSimplifier.ready;
-      const decimate = (P, I, faces, err) => {
-        if (I.length / 3 <= faces) return { positions: P, indices: I };
-        const [simp] = MeshoptSimplifier.simplify(I, P, 3, faces * 3, err);
-        return MV.compact(P, simp);
-      };
-      const real = decimate(positions, indices, Q.faces, 0.01);
-      const low = decimate(positions, indices, Math.max(200, +$('mtris').value), 0.2);
-
-      const colors = ph.map((p) => p.small);
-      const mat = { rough: hint.rough ?? 0.6, metal: hint.metal ?? 0, name: hint.category === 'carro' ? 'Body' : 'Model' };
-      const build = async (mesh, atlasSize, p0, p1, label) => {
-        const N = MV.vertexNormals(mesh.positions, mesh.indices);
-        const choice = await MV.chooseViews(mesh.positions, mesh.indices, views, cams, {
-          eps: grid.vs * 2.5, colors, tick,
-          onProgress: (f) => setStep(`Texturizando o ${label} com as fotos...`, p0 + (p1 - p0) * f),
-        });
-        return texturedMesh(ph, mesh.positions, mesh.indices, N, views, cams, choice, atlasSize, mat);
-      };
-      const realMesh = await build(real, Q.atlas, 60, 85, 'modelo realista');
-      const lowMesh = await build(low, Q.lowAtlas, 86, 97, 'low poly');
-
-      const size = +$('msize').value || hint.size || 1;
-      const T = outputTransform(real.positions, symInfo, size, hint.dims);
-      applyTransform(realMesh, T);
-      applyTransform(lowMesh, T);
-      models.realistic = new THREE.Group().add(realMesh);
-      models.lowpoly = new THREE.Group().add(lowMesh);
-      models.realistic.name = models.lowpoly.name = 'Root';
-      show('realistic');
-      $('dl1').disabled = $('dl2').disabled = false;
-      const dims = T.dims.map((d) => d.toLocaleString('pt-BR', { maximumFractionDigits: 2 })).join(' × ');
-      setStep(`Concluído em ${Math.round((performance.now() - t0) / 1000)} s. Coerência das fotos: ${Math.round(fit * 100)}%${fit < 0.8 ? ' (baixa: confira recortes, ordem e sentido)' : ''}. Medidas (L × A × C): ${dims} m.`, 100);
+      await finish({ grid, views, cams, ph, symInfo, hint, Q, t0, note: `Coerência das fotos: ${Math.round(fit * 100)}%${fit < 0.8 ? ' (baixa: confira recortes, ordem e sentido)' : ''}.` });
     } catch (e) {
       console.error(e);
       setStep('Erro: ' + e.message, 0);
+    } finally {
+      $('mgo').disabled = false;
     }
-    $('mgo').disabled = false;
   };
 
   renderChips();

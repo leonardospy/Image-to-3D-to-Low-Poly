@@ -34,6 +34,8 @@ Roda 100% no navegador, em qualquer plataforma (Chrome/Edge/Firefox/Safari, desk
 
 Fotos fora de ordem ou de alturas/zoom diferentes (ex.: capturas de tela): marque a vista de cada foto no seletor embaixo da miniatura; as fotos são reordenadas e cada uma ganha elevação, escala e perspectiva próprias. Com simetria espelhada, cada foto espelhada vira uma vista extra do lado oposto. Medidas completas na descrição ("4,28 x 1,76 x 1,23 m" ou "largura 1,76 m") ajustam o modelo final por eixo.
 
+Uma foto só (`docs/js/onephoto.js`): a página gera as outras vistas sem IA generativa, o que mantém tudo leve para qualquer aparelho. Para objeto simétrico (carro, pessoa, cadeira…), a foto espelhada vira a vista do lado oposto. Um molde da categoria, encaixado na silhueta (que também estima ângulo, elevação e perspectiva da foto), limita o que nenhuma vista mostra. O mapa de profundidade (Depth-Anything) cava as reentrâncias do lado fotografado. Para objeto de revolução (garrafa, vaso), o perfil da silhueta é girado. O que nenhuma vista vê recebe a cor típica do objeto. Sem categoria nem simetria, sai um relevo. Embaixo das fotos aparecem 8 vistas do modelo gerado. O lado não fotografado é dedução: fica coerente, mas sem os detalhes reais.
+
 Saída: metros, Y para cima, chão em y=0, frente (1ª foto) em +Z, plano de simetria em x=0; nó `Body` para carros. Limites: cavidades (caixa de roda, interior, vãos) não aparecem só com silhuetas; reflexos das fotos ficam na textura. Teste com fotos sintéticas: servir a raiz do repositório e abrir `docs/?synth=/data/test/<modelo>.glb&desc=carro&n=24&auto=1`.
 
 ## Instalação
