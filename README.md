@@ -32,6 +32,8 @@ Roda 100% no navegador, em qualquer plataforma (Chrome/Edge/Firefox/Safari, desk
 4. Textura: para cada triângulo, a foto que o vê mais de frente (com teste de visibilidade), escolha suavizada entre vizinhos, ganho de cor por foto e atlas JPEG de até 4096².
 5. O campo "O que está nas fotos?" (`docs/js/scene-text.js`) ajusta simetria (espelhada para carro, pessoa, cadeira…; de revolução para garrafa, vaso…), tamanho real em metros, rugosidade/metal, por onde a volta começou, meia volta, sentido e se o objeto está apoiado no chão.
 
+Fotos fora de ordem ou de alturas/zoom diferentes (ex.: capturas de tela): marque a vista de cada foto no seletor embaixo da miniatura; as fotos são reordenadas e cada uma ganha elevação, escala e perspectiva próprias. Com simetria espelhada, cada foto espelhada vira uma vista extra do lado oposto. Medidas completas na descrição ("4,28 x 1,76 x 1,23 m" ou "largura 1,76 m") ajustam o modelo final por eixo.
+
 Saída: metros, Y para cima, chão em y=0, frente (1ª foto) em +Z, plano de simetria em x=0; nó `Body` para carros. Limites: cavidades (caixa de roda, interior, vãos) não aparecem só com silhuetas; reflexos das fotos ficam na textura. Teste com fotos sintéticas: servir a raiz do repositório e abrir `docs/?synth=/data/test/<modelo>.glb&desc=carro&n=24&auto=1`.
 
 ## Instalação

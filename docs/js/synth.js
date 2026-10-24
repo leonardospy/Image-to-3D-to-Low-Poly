@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-export async function renderPhotos(url, { n = 24, dir = 1, el = 18, W = 1280, H = 960, seed = 7 } = {}) {
+export async function renderPhotos(url, { n = 24, dir = 1, el = 18, W = 1280, H = 960, seed = 7, varied = false } = {}) {
   let s = seed;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647) * 2 - 1;
   const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -47,12 +47,15 @@ export async function renderPhotos(url, { n = 24, dir = 1, el = 18, W = 1280, H 
   const files = [], truth = [];
   for (let i = 0; i < n; i++) {
     const az = dir * (i / n) * Math.PI * 2 + rnd() * 0.07;
-    const e = (el + rnd() * 3) * (Math.PI / 180);
-    const dist = L * 1.9 * (1 + rnd() * 0.06);
+    // varied: cada foto com altura e distancia/zoom bem diferentes (como capturas de tela de um visualizador)
+    const e = (varied ? 17 + rnd() * 17 : el + rnd() * 3) * (Math.PI / 180);
+    const dist = L * (varied ? 2.4 + rnd() * 1.0 : 1.9 * (1 + rnd() * 0.06));
+    cam.fov = varied ? 2 * Math.atan((L * 0.62) / dist) * (180 / Math.PI) * (1 + rnd() * 0.15) : 40;
+    cam.updateProjectionMatrix();
     const target = new THREE.Vector3(rnd() * L * 0.03, size.y * 0.45 + rnd() * L * 0.02, rnd() * L * 0.03);
     cam.position.set(Math.sin(az) * Math.cos(e) * dist, target.y + Math.sin(e) * dist, Math.cos(az) * Math.cos(e) * dist);
     cam.lookAt(target);
-    truth.push({ az, el: e, dist, target: target.toArray() });
+    truth.push({ az, el: e, dist, fov: cam.fov, target: target.toArray() });
     r.render(scene, cam);
     const blob = await new Promise((res) => r.domElement.toBlob(res, 'image/jpeg', 0.92));
     files.push(new File([blob], `foto_${String(i + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' }));

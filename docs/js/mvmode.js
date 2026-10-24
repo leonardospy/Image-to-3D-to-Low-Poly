@@ -178,7 +178,8 @@ export function init({ models, show, setStep, $ }) {
   }
 
   // transformacao final: simetria alinhada a x=0, frente da 1a foto em +Z, chao em y=0, metros
-  function outputTransform(P, sym, size) {
+  // dims (opcional): medidas reais { L: comprimento em Z, W: largura em X, H: altura em Y } -> escala por eixo
+  function outputTransform(P, sym, size, dims) {
     let beta = 0;
     if (sym) { beta = -sym.angle; if (Math.cos(beta) < 0) beta += Math.PI; }
     const cb = Math.cos(beta), sb = Math.sin(beta);
@@ -188,12 +189,21 @@ export function init({ models, show, setStep, $ }) {
       const [x, z] = rot(P[i], P[i + 2]), q = [x, P[i + 1], z];
       for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], q[c]); mx[c] = Math.max(mx[c], q[c]); }
     }
-    const big = Math.max(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) || 1, s = size / big;
+    const ext = [0, 1, 2].map((c) => mx[c] - mn[c] || 1);
+    const s0 = size / Math.max(...ext);
+    const f = [s0, s0, s0];
+    if (dims) {
+      // sem simetria, o comprimento vai para o maior eixo horizontal
+      const [ia, ib] = sym || ext[2] >= ext[0] ? [2, 0] : [0, 2];
+      if (dims.L) f[ia] = dims.L / ext[ia];
+      if (dims.W) f[ib] = dims.W / ext[ib];
+      if (dims.H) f[1] = dims.H / ext[1];
+    }
     const cx = (mn[0] + mx[0]) / 2, cz = (mn[2] + mx[2]) / 2;
     return {
-      point: (x, y, z) => { const [a, b] = rot(x, z); return [(a - cx) * s, (y - mn[1]) * s, (b - cz) * s]; },
-      normal: (x, y, z) => { const [a, b] = rot(x, z); return [a, y, b]; },
-      dims: [(mx[0] - mn[0]) * s, (mx[1] - mn[1]) * s, (mx[2] - mn[2]) * s],
+      point: (x, y, z) => { const [a, b] = rot(x, z); return [(a - cx) * f[0], (y - mn[1]) * f[1], (b - cz) * f[2]]; },
+      normal: (x, y, z) => { const [a, b] = rot(x, z); const n = [a / f[0], y / f[1], b / f[2]], l = Math.hypot(...n) || 1; return n.map((v) => v / l); },
+      dims: ext.map((e, c) => e * f[c]),
     };
   }
   function applyTransform(mesh, T) {
@@ -255,10 +265,14 @@ export function init({ models, show, setStep, $ }) {
         }
         cams = MV.initialCameras(views, { span, dir, start });
       }
-      cams = await MV.refinePoses(views, cams, {
-        miss, tick, dir: anyGiven ? 1 : dir, span: anyGiven ? 2 * Math.PI : span, varied, rounds: varied ? 4 : 3,
+      // simetria espelhada (plano x = 0, ja que a frente esta em +Z): fotos espelhadas viram vistas extras
+      const mirror = sym === 'mirror';
+      const ref = await MV.refinePoses(views, cams, {
+        miss, tick, dir: anyGiven ? 1 : dir, span: anyGiven ? 2 * Math.PI : span, varied, rounds: varied ? 6 : 3, mirror, azPrior: anyGiven ? 0.00003 : 0.00015,
         onProgress: (f, msg) => setStep(`Calculando a posição de cada foto (${msg})${dirNote}...`, 5 + 35 * f),
       });
+      cams = mirror ? ref.cams : ref;
+      const carveViews = mirror ? ref.views : views, carveCams = mirror ? MV.withMirror(cams, views) : cams;
       cams.forEach((c, i) => (ph[i].cell.lastChild.textContent = `${Math.round((((c.az / D2R) % 360) + 360) % 360)}° · ${Math.round(c.score * 100)}%`));
       const fit = cams.reduce((s, c) => s + c.score, 0) / n;
       window.__mv = { photos: ph, views, cams, MV, models };
@@ -266,8 +280,8 @@ export function init({ models, show, setStep, $ }) {
       setStep('Esculpindo o volume em alta resolução...', 42); await tick();
       const R = Math.max(...views.map((v, i) => Math.max(cams[i].cu - v.box.x0, v.box.x1 - cams[i].cu) / cams[i].s)) * 1.15;
       const Ry = Math.max(...views.map((v, i) => Math.max(cams[i].cr - v.box.y0, v.box.y1 - cams[i].cr) / cams[i].s)) * 1.15;
-      const grid = MV.carve(views, cams, MV.makeGrid(Math.max(R, Ry), Ry, Q.res), { miss });
-      if ($('mground').checked && hint.ground !== false) { setStep('Achando o chão...', 49); await tick(); MV.groundCut(views, cams, grid); }
+      const grid = MV.carve(carveViews, carveCams, MV.makeGrid(Math.max(R, Ry), Ry, Q.res), { miss });
+      if ($('mground').checked && hint.ground !== false) { setStep('Achando o chão...', 49); await tick(); MV.groundCut(carveViews, carveCams, grid); }
       let symInfo = null;
       if (sym === 'mirror') { setStep('Aplicando simetria espelhada...', 52); await tick(); symInfo = MV.mirrorSymmetry(grid); }
       if (sym === 'rot') { setStep('Aplicando simetria de revolução...', 52); await tick(); MV.rotationalSymmetry(grid); }
@@ -299,7 +313,7 @@ export function init({ models, show, setStep, $ }) {
       const lowMesh = await build(low, Q.lowAtlas, 86, 97, 'low poly');
 
       const size = +$('msize').value || hint.size || 1;
-      const T = outputTransform(real.positions, symInfo, size);
+      const T = outputTransform(real.positions, symInfo, size, hint.dims);
       applyTransform(realMesh, T);
       applyTransform(lowMesh, T);
       models.realistic = new THREE.Group().add(realMesh);
@@ -325,8 +339,9 @@ export function init({ models, show, setStep, $ }) {
     if (q.get('desc')) { $('mdesc').value = q.get('desc'); renderChips(); }
     import('./synth.js').then(async (m) => {
       setStep('Gerando fotos sintéticas...', 1);
-      const files = await m.renderPhotos(q.get('synth'), { n: +(q.get('n') || 24), dir: +(q.get('dir') || 1), el: +(q.get('el') || 18) });
+      const files = await m.renderPhotos(q.get('synth'), { n: +(q.get('n') || 24), dir: +(q.get('dir') || 1), el: +(q.get('el') || 18), varied: q.get('varied') === '1' });
       await setFiles(files);
+      if (q.get('views') === '1') photos.forEach((p, i) => (p.view.value = String(Math.round(((((i * 360) / photos.length) % 360) + 360) % 360))));
       if (q.get('auto')) $('mgo').click();
     });
   }

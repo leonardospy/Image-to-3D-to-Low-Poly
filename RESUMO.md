@@ -52,7 +52,7 @@ Convenção de saída: **metros, Y para cima, frente em +Z, +X = lado esquerdo, 
 3. Pages: o modo "Meu PC" foi só testado até a detecção do servidor (uma geração completa por ele e o seletor TRELLIS/Hunyuan não foram exercitados); layout mobile não foi testado.
 4. TRELLIS aceita 1 foto; sem fusão de várias fotos.
 5. O modo "Qualquer foto" do Pages é 2.5D (não substitui o 3D completo).
-6. "Fotos em volta" só viu fotos sintéticas; depende da ordem das fotos (seguem a volta) e de a 1ª mostrar a frente (ou dizer na descrição). Cavidades não aparecem (só silhuetas). O RMBG-1.4 tem licença não comercial da BRIA.
+6. "Fotos em volta": com 8 capturas de tela de um RX-7 (`data/test/rx7/`, fora do git; vista marcada por foto, alturas/zoom/perspectiva diferentes) a forma sai com proporções certas só quando as medidas vêm na descrição, e a textura fica em retalhos (poses imprecisas): silhuetas de poucas fotos tão variadas não fixam a pose. Testes descartados: busca grossa de elevação/escala por foto (piora), fator de esticamento horizontal por foto (não ajuda). Com fotos em sequência (sintéticas) funciona bem; depende da ordem das fotos (seguem a volta) e de a 1ª mostrar a frente (ou dizer na descrição). Cavidades não aparecem (só silhuetas). O RMBG-1.4 tem licença não comercial da BRIA.
 
 ## Próximos passos sugeridos
 - "Fotos em volta": testar com fotos reais de celular; recuperar cavidades (caixas de roda, janelas) com profundidade (Depth-Anything) ou consistência de cor; mesclar 2 fotos nas emendas da textura; separar rodas/faróis como no pipeline de carro.

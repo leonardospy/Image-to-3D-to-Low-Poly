@@ -73,8 +73,10 @@ export function prepareViews(raw) {
     const c = cleanSoftMask(r.mask, r.w, r.h);
     if (!c) throw new Error('Uma das fotos ficou sem objeto recortado.');
     const pyr = pyramid(c.mask, r.w, r.h);
+    // nivel baixo para avaliar poses: o objeto (nao a imagem) com ~200 px no lado maior
+    const objMax = Math.max(c.box.x1 - c.box.x0, c.box.y1 - c.box.y0);
     let lo = pyr.length - 1;
-    for (let i = 0; i < pyr.length; i++) if (Math.max(pyr[i].w, pyr[i].h) <= 160) { lo = i; break; }
+    for (let i = 0; i < pyr.length; i++) if (objMax * pyr[i].f <= 200) { lo = i; break; }
     const L = pyr[lo];
     let area = 0;
     for (let i = 0; i < L.m.length; i++) if (L.m[i] >= 128) area++;
@@ -120,7 +122,7 @@ export function carve(views, cams, grid, { miss = 0, skip = -1, lowRes = false }
   const field = new Float32Array(nx * ny * nz);
   const V = [];
   views.forEach((v, i) => {
-    if (i === skip) return;
+    if (skip instanceof Set ? skip.has(i) : i === skip) return;
     const c = cams[i], B = basis(c.az, c.el);
     let L;
     if (lowRes) L = v.lo;
@@ -204,57 +206,46 @@ function silhouetteIoU(pts, vs, c, lo) {
   return uni ? inter / uni : 0;
 }
 
-// desloca (cu, cr) para o centro da silhueta projetada coincidir com o centro da caixa da mascara
-function recenter(pts, c, box) {
-  const B = basis(c.az, c.el);
-  let u0 = Infinity, u1 = -Infinity, r0 = Infinity, r1 = -Infinity;
-  for (let p = 0; p < pts.length; p += 3) {
-    const x = pts[p], y = pts[p + 1], z = pts[p + 2];
-    const kk = 1 / Math.max(0.2, 1 - c.persp * (x * B.d[0] + y * B.d[1] + z * B.d[2]));
-    const u = c.cu + c.s * kk * (x * B.r[0] + z * B.r[2]), r = c.cr - c.s * kk * (x * B.u[0] + y * B.u[1] + z * B.u[2]);
-    if (u < u0) u0 = u; if (u > u1) u1 = u; if (r < r0) r0 = r; if (r > r1) r1 = r;
-  }
-  if (u1 < u0) return;
-  c.cu += (box.x0 + box.x1) / 2 - (u0 + u1) / 2;
-  c.cr += (box.y0 + box.y1) / 2 - (r0 + r1) / 2;
-}
-
-// busca grossa de elevacao e escala de uma foto (com recentralizacao), para fotos de alturas e zoom diferentes
-function sweepElScale(pts, vs, c, view, scaleFree, obj, elMin, elMax) {
-  if (!pts.length) return;
-  let best = { s: -Infinity };
-  const s0 = c.s;
-  for (let el = Math.max(elMin, 0); el <= elMax + 1e-6; el += 7 * D2R)
-    for (const f of scaleFree ? [0.7, 0.8, 0.9, 1, 1.12, 1.25, 1.4] : [1]) {
-      c.el = el; c.s = s0 * f;
-      recenter(pts, c, view.box);
-      const s = obj();
-      if (s > best.s) best = { s, el, sc: c.s, cu: c.cu, cr: c.cr };
-    }
-  Object.assign(c, { el: best.el, s: best.sc, cu: best.cu, cr: best.cr });
-}
-
 // pontuacao de uma vista: casco feito pelas OUTRAS fotos, projetado nesta
 function looScore(views, cams, v, res, miss) {
   const { R, Ry } = bounds(views, cams);
-  const g = carve(views, cams, makeGrid(R, Ry, res), { miss, skip: v, lowRes: true });
+  const g = carve(views, cams, makeGrid(R, Ry, res), { miss, skip: v, lowRes: true }); // v: indice ou Set
   return { pts: occupied(g), vs: g.vs };
 }
 
-export function meanScore(views, cams, res, miss) {
+// n = numero de fotos reais; se houver vistas espelhadas (indices n..2n-1), a foto v sai junto com seu espelho
+export function meanScore(views, cams, res, miss, n = views.length) {
   let s = 0;
-  for (let v = 0; v < views.length; v++) {
-    const { pts, vs } = looScore(views, cams, v, res, miss);
+  for (let v = 0; v < n; v++) {
+    const { pts, vs } = looScore(views, cams, n < views.length ? new Set([v, v + n]) : v, res, miss);
     s += silhouetteIoU(pts, vs, cams[v], views[v].lo);
   }
-  return s / views.length;
+  return s / n;
+}
+
+// ---------------------------------------------------------------- simetria espelhada nas fotos
+// Para objeto simetrico (plano x = 0, frente em +Z), a foto espelhada na horizontal equivale a uma foto tirada do
+// azimute oposto: dobra o numero de vistas sem foto nova.
+export function mirrorViews(views) {
+  return prepareViews(views.map((v) => {
+    const m = new Uint8Array(v.w * v.h);
+    for (let y = 0; y < v.h; y++) for (let x = 0; x < v.w; x++) m[y * v.w + x] = v.mask[y * v.w + v.w - 1 - x];
+    return { mask: m, w: v.w, h: v.h };
+  })).map((mv) => ({ ...mv, mirrored: true }));
+}
+export function withMirror(cams, views) {
+  return cams.concat(cams.map((c, i) => ({ ...c, az: -c.az, cu: views[i].w - c.cu })));
 }
 
 // Ajusta as poses: primeiro elevacao/perspectiva comuns, depois cada foto (azimute, elevacao, deslocamento e, no fim,
 // escala). Os azimutes ficam na ordem das fotos (cada um entre os vizinhos), o que evita trocar um lado pelo outro.
-export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgress = () => {}, tick = async () => {}, fixEl = null, global = true, free = ['az', 'el', 's', 'cu', 'cr'], dir = 1, span = 2 * Math.PI, azPrior = 0.00015, varied = false } = {}) {
+export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgress = () => {}, tick = async () => {}, fixEl = null, global = true, free = ['az', 'el', 's', 'cu', 'cr', 'persp'], dir = 1, span = 2 * Math.PI, azPrior = 0.00015, varied = false, mirror = false } = {}) {
   const n = views.length;
   cams = cams.map((c) => ({ ...c }));
+  const mv = mirror ? mirrorViews(views) : null;
+  const allViews = mirror ? views.concat(mv) : views;
+  const allCams = () => (mirror ? withMirror(cams, views) : cams);
+  const skipOf = (v) => (mirror ? new Set([v, v + n]) : v);
   const prior = cams.map((c) => c.az);
   const setAll = (key, val) => cams.forEach((c) => (c[key] = val));
   const full = span > 2 * Math.PI - 1e-3;
@@ -267,14 +258,14 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
   for (const el of els)
     for (const p of ps) {
       setAll('el', el); setAll('persp', p);
-      const s = meanScore(views, cams, 32, miss);
+      const s = meanScore(allViews, allCams(), 32, miss, n);
       if (s > best) { best = s; bestEl = el; bestP = p; }
       onProgress(0.25 * (++t / (els.length * ps.length)), `elevação ${Math.round(el / D2R)}°`);
       await tick();
     }
   if (global) { setAll('el', bestEl); setAll('persp', bestP); }
   const el0 = cams[0].el;
-  // fotos variadas (alturas e zoom diferentes): cada foto procura a propria elevacao e escala
+  // fotos variadas (alturas, zoom e distancias diferentes): elevacao larga, escala e perspectiva proprias por foto
   const elMin = varied ? -5 * D2R : el0 - 8 * D2R, elMax = varied ? 65 * D2R : el0 + 8 * D2R;
 
   // 2) por foto (descida coordenada); a foto 0 fixa o azimute e a origem; a escala so entra na ultima rodada
@@ -289,14 +280,14 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
   for (let round = 0; round < rounds; round++) {
     const last = round === rounds - 1;
     for (let v = 0; v < n; v++) {
-      const { pts, vs } = looScore(views, cams, v, last ? 56 : 40, miss);
+      const { pts, vs } = looScore(allViews, allCams(), skipOf(v), last ? 56 : 40, miss);
       const c = cams[v], b = views[v].box, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
       let params = v === 0 ? [['el', 4 * D2R]] : [['az', 8 * D2R], ['cu', 0.04 * bw], ['cr', 0.04 * bh], ['el', 3 * D2R]];
       if ((last || varied) && v > 0) params.push(['s', 0.04]);
+      if (varied) params.push(['persp', 0.04]);
       params = params.filter(([k]) => free.includes(k));
       // custo extra por se afastar do espacamento uniforme: so silhuetas deixam o azimute mal determinado
       const obj = () => silhouetteIoU(pts, vs, c, views[v].lo) - azPrior * ((c.az - prior[v]) / D2R) ** 2;
-      if (varied && round < rounds - 1) sweepElScale(pts, vs, c, views[v], v > 0, obj, elMin, elMax);
       let cur = obj();
       for (const sc of steps)
         for (let pass = 0; pass < 3; pass++) {
@@ -306,7 +297,7 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
             for (const sgn of [1, -1]) {
               const old = c[key];
               c[key] = key === 's' ? old * (1 + sgn * d) : old + sgn * d;
-              const ok = (key !== 'az' || azOk(v, c.az)) && (key !== 'el' || (c.el >= elMin && c.el <= elMax));
+              const ok = (key !== 'az' || azOk(v, c.az)) && (key !== 'el' || (c.el >= elMin && c.el <= elMax)) && (key !== 'persp' || (c.persp >= 0 && c.persp <= 0.6));
               const s = ok ? obj() : -1;
               if (s > cur + 1e-4) { cur = s; improved = true; break; }
               c[key] = old;
@@ -319,7 +310,7 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
       await tick();
     }
   }
-  return cams;
+  return mirror ? { cams, views: allViews, allCams: allCams() } : cams;
 }
 
 // ---------------------------------------------------------------- chao

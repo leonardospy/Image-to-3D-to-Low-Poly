@@ -3,7 +3,7 @@
 const strip = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 const CATS = [
-  { id: 'carro', label: 'carro', size: 4.3, sym: 'mirror', rough: 0.4, metal: 0.15, words: ['carro', 'automovel', 'veiculo', 'sedan', 'seda', 'hatch', 'suv', 'picape', 'pickup', 'caminhonete', 'jipe', 'jeep', 'van', 'perua', 'conversivel', 'car', 'truck', 'fusca', 'golf', 'gol', 'civic', 'corolla', 'onix', 'uno', 'kombi', 'camaro', 'mustang', 'porsche', 'ferrari'] },
+  { id: 'carro', label: 'carro', size: 4.3, sym: 'mirror', rough: 0.4, metal: 0.15, words: ['carro', 'automovel', 'veiculo', 'sedan', 'seda', 'hatch', 'suv', 'picape', 'pickup', 'caminhonete', 'jipe', 'jeep', 'van', 'perua', 'conversivel', 'car', 'truck', 'fusca', 'golf', 'gol', 'civic', 'corolla', 'onix', 'uno', 'kombi', 'camaro', 'mustang', 'porsche', 'ferrari', 'mazda', 'rx-7', 'rx7', 'toyota', 'supra', 'honda', 'nissan', 'skyline', 'ford', 'chevrolet', 'fiat', 'volkswagen', 'vw', 'bmw', 'audi', 'mercedes', 'hyundai', 'renault', 'peugeot', 'subaru', 'mitsubishi', 'lamborghini'] },
   { id: 'onibus', label: 'ônibus/caminhão', size: 10, sym: 'mirror', rough: 0.45, metal: 0.1, words: ['onibus', 'caminhao', 'carreta', 'bus', 'lorry'] },
   { id: 'moto', label: 'moto', size: 2.1, sym: 'mirror', rough: 0.4, metal: 0.3, words: ['moto', 'motocicleta', 'scooter', 'motorcycle', 'motorbike'] },
   { id: 'bike', label: 'bicicleta', size: 1.75, sym: 'mirror', rough: 0.5, metal: 0.4, words: ['bicicleta', 'bike', 'bicycle'] },
@@ -76,7 +76,28 @@ export function parseScene(text) {
     size = Math.max(size, v * u);
   }
   if (size > 0) { out.size = size; out.sizeGiven = true; }
-  if (out.size) out.chips.push(`maior medida ≈ ${out.size.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m${out.sizeGiven ? '' : ' (típica)'}`);
+
+  // medidas completas: "4,28 x 1,76 x 1,23 m" (comprimento x largura x altura) ou "largura 1,76 m", "altura 123 cm"...
+  const num = String.raw`(\d+(?:[.,]\d+)?)`, unit = '(mm|cm|m)?';
+  const toM = (v, u) => parseFloat(v.replace(',', '.')) * (u === 'mm' ? 0.001 : u === 'cm' ? 0.01 : 1);
+  const tri = new RegExp(String.raw`${num}\s*${unit}\s*[x×]\s*${num}\s*${unit}\s*[x×]\s*${num}\s*${unit}`).exec(t);
+  const dims = {};
+  if (tri) {
+    const u = tri[6] || tri[4] || tri[2] || 'm';
+    dims.L = toM(tri[1], tri[2] || u); dims.W = toM(tri[3], tri[4] || u); dims.H = toM(tri[5], tri[6] || u);
+  }
+  for (const [k, words] of [['L', 'comprimento|length'], ['W', 'largura|width'], ['H', 'altura|height']]) {
+    const m = new RegExp(String.raw`(?:${words})\D{0,12}?${num}\s*${unit}`).exec(t);
+    if (m) dims[k] = toM(m[1], m[2] || 'm');
+  }
+  if (Object.keys(dims).length) {
+    out.dims = dims;
+    out.size = Math.max(dims.L || 0, dims.W || 0, dims.H || 0, out.sizeGiven ? out.size : 0);
+    out.sizeGiven = true;
+  }
+  const f2 = (v) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  if (out.dims) out.chips.push('medidas: ' + ['L', 'W', 'H'].map((k) => (out.dims[k] ? f2(out.dims[k]) : '?')).join(' × ') + ' m (C × L × A)');
+  else if (out.size) out.chips.push(`maior medida ≈ ${out.size.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m${out.sizeGiven ? '' : ' (típica)'}`);
 
   // simetria forcada pelo texto
   if (/(sem simetria|assimetric|nao e simetric|irregular|asymmetric)/.test(t)) out.sym = 'none';
