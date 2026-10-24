@@ -56,13 +56,23 @@ def main():
     out = pipe(image=imgs if multi else imgs["front"], num_inference_steps=steps, guidance_scale=5.0,
                generator=gen, octree_resolution=res, num_chunks=20000, output_type="mesh")
     mesh = export_to_trimesh(out)[0]
-    # cor: projeta as fotos na malha (sem IA)
-    import numpy as np, trimesh
-    from project_colors import project_colors
-    sys.path.insert(0, HERE)
-    cols = project_colors(mesh, [np.array(im.convert("RGBA")) for im in imgs.values()], log=lambda s: print(s, flush=True))
-    mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, vertex_colors=cols)
-    mesh.export(out_path)
+    mesh.export(out_path)  # forma crua
+    import numpy as np
+    arrs = [np.array(im.convert("RGBA")) for im in imgs.values()]
+    car_out = sys.argv[sys.argv.index("--car-out") + 1] if "--car-out" in sys.argv else None
+    if car_out:
+        from car_tools import build_car
+        length = float(sys.argv[sys.argv.index("--length") + 1]) if "--length" in sys.argv else 4.3
+        low = opt("--low", 6000)
+        width = float(sys.argv[sys.argv.index("--width") + 1]) if "--width" in sys.argv else 0.0
+        height = float(sys.argv[sys.argv.index("--height") + 1]) if "--height" in sys.argv else 0.0
+        build_car(mesh, arrs, list(imgs.keys()), car_out, length, 150000, low, log=lambda s: print(s, flush=True), width_m=width, height_m=height)
+    else:
+        import trimesh
+        from project_colors import project_colors
+        cols = project_colors(mesh, arrs, log=lambda s: print(s, flush=True))
+        mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, vertex_colors=cols)
+        mesh.export(out_path)
     print(f"[ia] pronto: {len(mesh.faces)} triangulos", flush=True)
 
 

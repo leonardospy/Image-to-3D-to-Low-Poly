@@ -5,87 +5,126 @@ import cv2
 import numpy as np
 
 DIRS = {"+z": (0, 0, 1), "-z": (0, 0, -1), "+x": (1, 0, 0), "-x": (-1, 0, 0)}
+UP = np.array([0.0, 1.0, 0.0])
 
 
-def _fit(V, d, rgba):
-    """Mapeia vertices para pixels da foto (ajuste por altura, base alinhada, centro horizontal)."""
-    d = np.asarray(d, float)
-    up = np.array([0.0, 1.0, 0.0])
-    right = np.cross(up, d)
-    u, v, t = V @ right, V @ up, V @ d
-    alpha = rgba[:, :, 3] > 127
-    ys, xs = np.nonzero(alpha)
-    x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
-    s = (y1 - y0 + 1) / max(v.max() - v.min(), 1e-9)
-    px = (x0 + x1) / 2 + (u - (u.min() + u.max()) / 2) * s
-    py = y1 - (v - v.min()) * s
-    return px, py, t, alpha
+class ColorProjector:
+    def __init__(self, V, view_images, names=None, log=print):
+        """V: vertices da malha de referencia (n,3). view_images: lista de arrays RGBA uint8."""
+        self.V = np.asarray(V, float)
+        self.extent = float(np.ptp(self.V, axis=0).max())
+        self.views = []
+        used = set()
+        for i, rgba in enumerate(view_images):
+            alpha = rgba[:, :, 3] > 127
+            ys, xs = np.nonzero(alpha)
+            x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+            best = None
+            for name, d in DIRS.items():
+                if name in used and len(view_images) <= 4:
+                    continue
+                fit = self._fit(np.asarray(d, float), (x0, x1, y0, y1))
+                px, py, _ = self._map(self.V, fit)
+                score = self._iou(px, py, alpha)
+                if best is None or score > best[0]:
+                    best = (score, name, np.asarray(d, float), fit)
+            score, dname, d, fit = best
+            used.add(dname)
+            if log:
+                log(f"[cor] foto {i + 1}{'' if not names else ' (' + names[i] + ')'}: direcao {dname} (IoU {score:.2f})")
+            h, w = alpha.shape
+            px, py, t = self._map(self.V, fit)
+            ix, iy = np.clip(np.round(px).astype(int), 0, w - 1), np.clip(np.round(py).astype(int), 0, h - 1)
+            zb = np.full(((h + 1) // 2, (w + 1) // 2), -1e9)
+            np.maximum.at(zb, (iy // 2, ix // 2), t)
+            self.views.append(dict(d=d, name=dname, label=names[i] if names else None, fit=fit,
+                                   rgba=rgba, alpha=alpha, zb=zb, shape=(h, w), iou=score))
+        self.mean = self._estimate_paint(view_images[0])
 
+    def _fit(self, d, box):
+        right = np.cross(UP, d)
+        u, v = self.V @ right, self.V @ UP
+        x0, x1, y0, y1 = box
+        s = (y1 - y0 + 1) / max(v.max() - v.min(), 1e-9)
+        return dict(d=d, right=right, s=s, uc=(u.min() + u.max()) / 2, v0=v.min(), cx=(x0 + x1) / 2, y1=y1)
 
-def _iou(px, py, alpha):
-    h, w = alpha.shape
-    occ = np.zeros((h, w), np.uint8)
-    ix, iy = np.round(px).astype(int), np.round(py).astype(int)
-    ok = (ix >= 0) & (ix < w) & (iy >= 0) & (iy < h)
-    occ[iy[ok], ix[ok]] = 1
-    occ = cv2.morphologyEx(occ, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-    a = alpha.astype(np.uint8)
-    inter, union = (occ & a).sum(), (occ | a).sum()
-    return inter / max(union, 1)
+    @staticmethod
+    def _map(P, f):
+        u, v, t = P @ f["right"], P @ UP, P @ f["d"]
+        return f["cx"] + (u - f["uc"]) * f["s"], f["y1"] - (v - f["v0"]) * f["s"], t
 
-
-def project_colors(mesh, view_images, log=print):
-    """mesh: trimesh.Trimesh; view_images: lista de arrays RGBA uint8. Devolve cores (n,4) uint8."""
-    V = np.asarray(mesh.vertices, float)
-    N = np.asarray(mesh.vertex_normals, float)
-    extent = float(np.ptp(V, axis=0).max())
-    acc = np.zeros((len(V), 3))
-    wsum = np.zeros(len(V))
-    used = set()
-    body = []
-
-    for i, rgba in enumerate(view_images):
-        best = None
-        for name, d in DIRS.items():
-            if name in used and len(view_images) <= 4:
-                continue
-            px, py, t, alpha = _fit(V, d, rgba)
-            score = _iou(px, py, alpha)
-            if best is None or score > best[0]:
-                best = (score, name, d, px, py, t, alpha)
-        score, name, d, px, py, t, alpha = best
-        used.add(name)
-        log(f"[cor] foto {i + 1}: direcao {name} (IoU {score:.2f})")
+    @staticmethod
+    def _iou(px, py, alpha):
         h, w = alpha.shape
+        occ = np.zeros((h, w), np.uint8)
         ix, iy = np.round(px).astype(int), np.round(py).astype(int)
-        inside = (ix >= 0) & (ix < w) & (iy >= 0) & (iy < h)
-        ixc, iyc = np.clip(ix, 0, w - 1), np.clip(iy, 0, h - 1)
+        ok = (ix >= 0) & (ix < w) & (iy >= 0) & (iy < h)
+        occ[iy[ok], ix[ok]] = 1
+        occ = cv2.morphologyEx(occ, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+        a = alpha.astype(np.uint8)
+        return (occ & a).sum() / max((occ | a).sum(), 1)
 
-        # z-buffer (resolucao /2) para nao pintar o que esta atras
-        zb = np.full(((h + 1) // 2, (w + 1) // 2), -1e9)
-        np.maximum.at(zb, (iyc // 2, ixc // 2), t)
-        visible = t >= zb[iyc // 2, ixc // 2] - 0.03 * extent
+    @staticmethod
+    def _estimate_paint(rgba):
+        """Cor dominante da carroceria: maior grupo de cor do objeto, ignorando muito escuro/estourado."""
+        px = rgba[:, :, :3][rgba[:, :, 3] > 127].astype(np.float32)
+        if len(px) > 20000:
+            px = px[np.random.default_rng(0).choice(len(px), 20000, replace=False)]
+        if len(px) < 50:
+            return np.array([128.0, 128.0, 128.0])
+        _, labels, centers = cv2.kmeans(px, 5, None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5), 3, cv2.KMEANS_PP_CENTERS)
+        counts = np.bincount(labels.ravel(), minlength=5)
+        luma = centers @ np.array([0.299, 0.587, 0.114])
+        ok = (luma > 55) & (luma < 215)
+        if not ok.any():
+            return centers[counts.argmax()].astype(float)
+        score = np.where(ok, counts, -1)
+        return centers[score.argmax()].astype(float)
 
-        facing = np.clip(N @ np.asarray(d, float), 0, None) ** 1.5
-        valid = inside & alpha[iyc, ixc] & visible
-        wgt = facing * valid
-        acc += rgba[iyc, ixc, :3] * wgt[:, None]
-        wsum += wgt
-        body.append(rgba[:, :, :3][alpha].mean(axis=0))
+    def direction_of(self, label):
+        """Direcao (nome) escolhida para a foto com esse rotulo, ou None."""
+        for v in self.views:
+            if v["label"] == label:
+                return v["name"]
+        return None
 
-    seen = wsum > 1e-6
-    mean = (acc[seen].sum(axis=0) / wsum[seen].sum()) if seen.any() else np.mean(body, axis=0)
-    cols = np.where(wsum[:, None] > 1e-6, acc / np.maximum(wsum[:, None], 1e-6), mean)
+    def sample(self, P, N, smooth_edges=None):
+        """Cores sRGB (0-255) para pontos P com normais N. Pontos sem foto recebem a cor media."""
+        P, N = np.asarray(P, float), np.asarray(N, float)
+        acc = np.zeros((len(P), 3))
+        wsum = np.zeros(len(P))
+        for vw in self.views:
+            h, w = vw["shape"]
+            px, py, t = self._map(P, vw["fit"])
+            ix, iy = np.round(px).astype(int), np.round(py).astype(int)
+            inside = (ix >= 0) & (ix < w) & (iy >= 0) & (iy < h)
+            ixc, iyc = np.clip(ix, 0, w - 1), np.clip(iy, 0, h - 1)
+            visible = t >= vw["zb"][iyc // 2, ixc // 2] - 0.03 * self.extent
+            facing = np.clip(N @ vw["d"], 0, None) ** 1.5
+            wgt = facing * (inside & vw["alpha"][iyc, ixc] & visible)
+            acc += vw["rgba"][iyc, ixc, :3] * wgt[:, None]
+            wsum += wgt
+        seen = wsum > 1e-6
+        cols = np.where(seen[:, None], acc / np.maximum(wsum[:, None], 1e-6), self.mean)
+        return cols, seen
 
-    # suaviza as cores entre vertices vizinhos (reduz emendas e pontos sem foto)
-    edges = mesh.edges_unique
-    for _ in range(3):
+
+def smooth_vertex_colors(cols, edges, iters=3):
+    n = len(cols)
+    for _ in range(iters):
         s = cols.copy()
-        cnt = np.ones(len(V))
+        cnt = np.ones(n)
         np.add.at(s, edges[:, 0], cols[edges[:, 1]])
         np.add.at(s, edges[:, 1], cols[edges[:, 0]])
         np.add.at(cnt, edges[:, 0], 1)
         np.add.at(cnt, edges[:, 1], 1)
         cols = s / cnt[:, None]
-    rgba_out = np.concatenate([np.clip(cols, 0, 255), np.full((len(V), 1), 255)], axis=1).astype(np.uint8)
-    return rgba_out
+    return cols
+
+
+def project_colors(mesh, view_images, log=print):
+    """Compatibilidade: cores por vertice (n,4) uint8."""
+    cp = ColorProjector(mesh.vertices, view_images, log=log)
+    cols, _ = cp.sample(mesh.vertices, mesh.vertex_normals)
+    cols = smooth_vertex_colors(cols, mesh.edges_unique)
+    return np.concatenate([np.clip(cols, 0, 255), np.full((len(cols), 1), 255)], axis=1).astype(np.uint8)

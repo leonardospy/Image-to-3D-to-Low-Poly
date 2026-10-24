@@ -24,3 +24,11 @@ Teste de referência: `data/jobs/golf_hy/out/{realistic,lowpoly}.glb` (aberto em
 - Resultados de IA com 1 foto inventam os lados não vistos; várias vistas (modelo `mv`) reduzem isso.
 - `C:\fototools` ficou como pasta vazia/quase vazia (a remoção foi bloqueada): pode apagar manualmente.
 - Para reinstalar o ambiente de IA: `ai/setup.ps1` (TripoSR); dependências do Hunyuan: `diffusers==0.32.2 opencv-python-headless pymeshlab pygltflib accelerate` no mesmo venv, repositório `ai/Hunyuan3D-2` (git clone da Tencent).
+
+## Modo carro (2026-10-24)
+Motor Hunyuan3D gera a forma; `ai/car_tools.py` trata o carro (sem IA) e `lib/car.js` faz o acabamento PBR:
+- Escala para as medidas reais (comprimento/largura/altura em metros), chão em y=0, frente em +Z, +X = esquerda.
+- Rodas detectadas e **substituídas por rodas procedurais giráveis** (`Wheel_FL/FR/RL/RR`, origem no eixo, girar em X; partes tire/rim/disc).
+- Faróis e lanternas separados (`Headlight_L/R`, `Taillight_L/R`) com material emissivo e âncoras de luz vazias (`HeadlightAnchor_*`, `TaillightAnchor_*`); vidros em `Glass` (transparente).
+- Realista: ~150k triângulos, cor por vértice (espelhada para o lado não fotografado, reflexos atenuados). Low poly: carroceria decimada + textura 2048 assada das fotos, rodas 16 segmentos.
+- Limites: a detecção de rodas/faróis é heurística (proporções + geometria); portas não têm recorte próprio (só aparecem na textura se a foto mostrar); com 1 foto 3/4 a cor dos lados é aproximada.

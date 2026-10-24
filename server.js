@@ -62,7 +62,7 @@ app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   for (const f of files) if (viewMap[f.originalname]) views[viewMap[f.originalname]] = f.path;
   if (hy && !Object.keys(views).length) views.front = pick.path;
   const task = hy
-    ? runHunyuanJob(job, views, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0' }, log, step, job.abort.signal)
+    ? runHunyuanJob(job, views, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0', lengthM: +req.body.length || 4.3, widthM: +req.body.width || 0, heightM: +req.body.height || 0 }, log, step, job.abort.signal)
     : ai
     ? runAiJob(job, pick.path, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0' }, log, step, job.abort.signal)
     : runJob(job, opts, log, step, job.abort.signal);

@@ -38,7 +38,20 @@ function show(name) {
     let tris = 0;
     current.traverse((o) => { if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
     $('info').textContent = `${Math.round(tris).toLocaleString('pt-BR')} triângulos`;
+    fitCamera(current);
   }
+}
+let fitted = '';
+function fitCamera(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3()).length();
+  const key = size.toFixed(2);
+  if (fitted === key) return;
+  fitted = key;
+  const c = box.getCenter(new THREE.Vector3());
+  controls.target.copy(c);
+  camera.position.copy(c).add(new THREE.Vector3(0.7, 0.35, 0.9).multiplyScalar(size * 0.85));
+  camera.near = size / 200; camera.far = size * 50; camera.updateProjectionMatrix();
 }
 function applyWire() {
   current?.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => (m.wireframe = wire)); });
@@ -109,7 +122,7 @@ function viewMap() {
   [...$('picks').children].forEach((c, i) => { const v = c.querySelector('select').value; if (v) m[photos[i].name] = v; });
   return m;
 }
-$('engine').onchange = () => { $('aiopts').hidden = !isAi(); $('quality').parentElement.hidden = isAi(); document.querySelectorAll('#picks select').forEach((s) => (s.hidden = !isHy())); refreshGo(); };
+$('engine').onchange = () => { $('aiopts').hidden = !isAi(); $('quality').parentElement.hidden = isAi(); document.querySelectorAll('#picks select').forEach((s) => (s.hidden = !isHy())); $('dims').hidden = !isHy(); refreshGo(); };
 $('drop').onclick = () => $('files').click();
 $('files').onchange = (e) => setPhotos(e.target.files);
 $('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
@@ -126,6 +139,7 @@ $('go').onclick = async () => {
   fd.append('engine', $('engine').value);
   fd.append('pick', photos[pick]?.name || '');
   fd.append('removeBg', $('rembg').checked ? '1' : '0');
+  fd.append('length', $('dl').value); fd.append('width', $('dw').value); fd.append('height', $('dh').value);
   fd.append('views', JSON.stringify(isHy() ? viewMap() : {}));
   const chosen = isHy() ? photos.filter((f) => viewMap()[f.name]) : isAi() ? [photos[pick]] : photos;
   (chosen.length ? chosen : [photos[0]]).forEach((f) => fd.append('photos', f));
