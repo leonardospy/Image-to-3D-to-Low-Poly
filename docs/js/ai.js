@@ -69,3 +69,14 @@ export async function foregroundMask(image, w, h, rgba) {
   }
   return segment(rgba, w, h, 40).mask.map((v) => (v ? 255 : 0)); // fundo liso
 }
+
+// reconhece o objeto (classes do ImageNet) quando a descricao nao diz o que e; ~12 MB, roda em qualquer aparelho
+let clsPipe = null;
+export async function classify(canvas, setStep) {
+  await getTF(setStep);
+  if (!clsPipe) {
+    setStep?.('Baixando IA que reconhece o objeto (1ª vez, ~12 MB)...', 4);
+    clsPipe = await tf.pipeline('image-classification', 'Xenova/resnet-18', { dtype: 'q8' });
+  }
+  return clsPipe(tf.RawImage.fromCanvas(canvas), { top_k: 5 });
+}

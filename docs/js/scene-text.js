@@ -122,3 +122,30 @@ export function parseScene(text) {
   else if (/horario|clockwise/.test(t)) { out.dir = 'cw'; out.chips.push('sentido horário'); }
   return out;
 }
+
+// classes do ImageNet (reconhecimento automatico) -> categoria; soma as notas das 5 primeiras por categoria
+const IMAGENET = {
+  carro: ['sports car', 'racer', 'cab', 'convertible', 'limousine', 'minivan', 'beach wagon', 'station wagon', 'jeep', 'pickup', 'car wheel', 'grille', 'model t', 'police van', 'ambulance', 'go-kart'],
+  onibus: ['school bus', 'trolleybus', 'minibus', 'moving van', 'trailer truck', 'fire engine', 'garbage truck', 'tow truck'],
+  moto: ['moped', 'motor scooter'],
+  bike: ['mountain bike', 'bicycle-built-for-two', 'tricycle', 'unicycle'],
+  cadeira: ['folding chair', 'rocking chair', 'barber chair', 'throne'],
+  mesa: ['dining table', 'desk'],
+  sofa: ['studio couch'],
+  caneca: ['coffee mug', 'teapot', 'cup'],
+  revolucao: ['beer bottle', 'wine bottle', 'water bottle', 'pop bottle', 'pill bottle', 'whiskey jug', 'water jug', 'vase', 'beer glass', 'goblet', 'candle', 'bucket', 'barrel', 'pot, flowerpot', 'mixing bowl', 'soup bowl'],
+  capacete: ['crash helmet', 'football helmet'],
+  sapato: ['running shoe', 'sandal', 'clog', 'cowboy boot', 'loafer'],
+  animal: ['teddy'],
+};
+export function categoryFromLabels(results) {
+  const sum = {};
+  for (const { label, score } of results) {
+    const l = label.toLowerCase();
+    for (const [cat, keys] of Object.entries(IMAGENET)) if (keys.some((k) => l.includes(k))) sum[cat] = (sum[cat] || 0) + score;
+  }
+  const best = Object.entries(sum).sort((a, b) => b[1] - a[1])[0];
+  if (!best || best[1] < 0.25) return null;
+  const c = CATS.find((x) => x.id === best[0]);
+  return { category: c.id, label: c.label, score: best[1], sym: c.sym, size: c.size, rough: c.rough, metal: c.metal };
+}

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { MeshoptSimplifier } from './vendor/meshopt_simplifier.module.js';
 import * as ai from './ai.js';
 import * as MV from './multiview.js';
-import { parseScene } from './scene-text.js';
+import { parseScene, categoryFromLabels } from './scene-text.js';
 import * as ONE from './onephoto.js';
 import { buildRelief } from './relief.js';
 
@@ -356,11 +356,12 @@ export function init({ models, show, setStep, $ }) {
       ONE.carveDepth(grid, vv.views[0], vv.cams[0], depth);
       ONE.carveDepth(grid, vv.views[1], vv.cams[1], ONE.flipDepth(depth, p.w, p.h));
     }
+    ONE.smoothField(grid, 2);
     const ph = vv.flip.map((fl) => (fl ? { ...p, flip: true, small: flipSmall(p.small) } : p));
     window.__mv = { photos: ph, views: vv.views, cams: vv.cams, MV, models, T };
     const realMesh = await finish({
       grid, views: vv.views, cams: vv.cams, ph, symInfo: null, hint, Q, t0, fillColor: objectColor(p), smoothIt: 14,
-      sizeOverride: +$('msize').value || Math.max(T.W, T.H, T.L),
+      sizeOverride: +$('msize').value || hint.size || Math.max(T.W, T.H, T.L),
       note: `1 foto: ${mode === 'mirror' ? 'lado oposto gerado por simetria' : 'giro gerado por simetria de revolução'}, partes não vistas pelo molde. ${fitNote}`,
     });
     showGenerated(realMesh.parent);
@@ -409,11 +410,32 @@ export function init({ models, show, setStep, $ }) {
     return realMesh;
   }
 
+  // descricao sem categoria: a IA de reconhecimento olha o objeto recortado na 1a foto
+  async function recognize(hint) {
+    try {
+      const p = photos[0], b = MV.cleanSoftMask(p.mask, p.w, p.h)?.box;
+      if (!b) return;
+      const pad = Math.round(0.05 * Math.max(b.x1 - b.x0, b.y1 - b.y0));
+      const x0 = Math.max(0, b.x0 - pad), y0 = Math.max(0, b.y0 - pad), w = Math.min(p.w, b.x1 + pad) - x0, h = Math.min(p.h, b.y1 + pad) - y0;
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(p.bitmap, x0, y0, w, h, 0, 0, w, h);
+      const found = categoryFromLabels(await ai.classify(cv, setStep));
+      if (!found) return;
+      Object.assign(hint, { category: found.category, sym: found.sym, rough: hint.rough ?? found.rough, metal: hint.metal ?? found.metal });
+      if (!hint.size) hint.size = found.size;
+      $('mchips').innerHTML += ` <span class="chip">reconhecido: ${found.label} (${Math.round(found.score * 100)}%)</span>`;
+    } catch (e) {
+      console.warn('reconhecimento falhou', e);
+    }
+  }
+
   $('mgo').onclick = async () => {
     $('mgo').disabled = true;
     const t0 = performance.now();
     try {
       const hint = renderChips();
+      if (!hint.category && !hint.sym) await recognize(hint);
       const Q = QUALITY[$('mq').value];
       const n = photos.length;
       const span = +($('mspan').value === 'auto' ? hint.span || 360 : $('mspan').value) * D2R;

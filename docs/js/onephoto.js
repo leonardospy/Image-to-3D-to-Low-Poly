@@ -173,6 +173,23 @@ export function buildField(views, cams, T, res) {
   return g;
 }
 
+// borrao 3D leve no campo: tira degraus do molde e abas finas onde molde e silhuetas se cruzam
+export function smoothField(g, passes = 2) {
+  let a = g.field, b = new Float32Array(a.length);
+  const st = [1, g.nx, g.nx * g.ny], dim = [g.nx, g.ny, g.nz];
+  for (let p = 0; p < passes; p++)
+    for (let ax = 0; ax < 3; ax++) {
+      const s = st[ax], d = dim[ax];
+      for (let k = 0; k < g.nz; k++) for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
+        const idx = i + g.nx * (j + g.ny * k), c = ax === 0 ? i : ax === 1 ? j : k;
+        b[idx] = 0.25 * (c > 0 ? a[idx - s] : 0) + 0.5 * a[idx] + 0.25 * (c < d - 1 ? a[idx + s] : 0);
+      }
+      [a, b] = [b, a];
+    }
+  g.field = a;
+  return g;
+}
+
 // Cava o volume com o mapa de profundidade (0..255, maior = mais perto) visto pela camera cam: tudo o que estiver
 // claramente na frente da superficie observada sai. A escala da profundidade e ajustada ao proprio volume.
 export function carveDepth(g, view, cam, depth0, { margin = 4, maxCut = 0.25 } = {}) {
