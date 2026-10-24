@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runJob } from './lib/pipeline.js';
 import { buildModels } from './lib/postprocess.js';
 import { locateTools } from './lib/tools.js';
+import { runAiJob, aiPython } from './lib/ai.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8')); } catch {}
@@ -29,7 +30,7 @@ const upload = multer({
     },
     filename: (_r, f, cb) => cb(null, path.basename(f.originalname).replace(/[^\w.\-]/g, '_')),
   }),
-  fileFilter: (_r, f, cb) => cb(null, /\.(jpe?g|png|tiff?)$/i.test(f.originalname)),
+  fileFilter: (_r, f, cb) => cb(null, /\.(jpe?g|png|tiff?|webp)$/i.test(f.originalname)),
   limits: { files: 300, fileSize: 60 * 1024 * 1024 },
 });
 
@@ -38,11 +39,13 @@ function emit(job) {
   job.clients.forEach((res) => res.write(data));
 }
 
-app.get('/api/tools', (_req, res) => res.json(locateTools()));
+app.get('/api/tools', (_req, res) => res.json({ ...locateTools(), ai: !!aiPython() }));
 
 app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   const files = req.files || [];
-  if (files.length < 8) return res.status(400).json({ error: 'Envie pelo menos 8 fotos (ideal: 30-80).' });
+  const ai = req.body.engine === 'ai';
+  if (ai ? files.length < 1 : files.length < 8) return res.status(400).json({ error: ai ? 'Envie pelo menos 1 foto.' : 'Envie pelo menos 8 fotos (ideal: 30-80).' });
+  if (ai && !aiPython()) return res.status(400).json({ error: 'Ambiente de IA nao instalado (veja ai/README.md).' });
   const job = {
     id: req.jobId, dir: path.join(DATA, req.jobId), status: 'running', step: 'Na fila', progress: 0,
     log: [], clients: new Set(), stats: null, error: null, abort: new AbortController(),
@@ -51,7 +54,11 @@ app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   const log = (l) => { job.log.push(l); job.clients.forEach((r) => r.write(`event: log\ndata: ${JSON.stringify(l)}\n\n`)); };
   const step = (s, p) => { job.step = s; job.progress = p; log(`== ${s}`); emit(job); };
   const opts = { quality: req.body.quality, lowPolyTris: Math.max(300, Math.min(100000, +req.body.lowPolyTris || 5000)) };
-  runJob(job, opts, log, step, job.abort.signal)
+  const pick = files.find((f) => f.originalname === req.body.pick) || files[0];
+  const task = ai
+    ? runAiJob(job, pick.path, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0' }, log, step, job.abort.signal)
+    : runJob(job, opts, log, step, job.abort.signal);
+  task
     .then((stats) => { job.status = 'done'; job.stats = stats; })
     .catch((e) => { job.status = 'error'; job.error = e.message; log(`ERRO: ${e.message}`); })
     .finally(() => emit(job));
@@ -79,7 +86,8 @@ app.post('/api/jobs/:id/relowpoly', express.json(), async (req, res) => {
   if (!job || job.status !== 'done') return res.sendStatus(409);
   try {
     const mvs = path.join(job.dir, 'mvs');
-    const obj = path.join(mvs, fs.readdirSync(mvs).find((f) => f.endsWith('.obj')));
+    const raw = path.join(job.dir, 'ai_raw.glb');
+    const obj = fs.existsSync(raw) ? raw : path.join(mvs, fs.readdirSync(mvs).find((f) => f.endsWith('.obj')));
     job.stats = await buildModels(obj, path.join(job.dir, 'out'), { lowPolyTris: Math.max(300, +req.body.lowPolyTris || 5000) });
     res.json(job.stats);
   } catch (e) { res.status(500).json({ error: e.message }); }

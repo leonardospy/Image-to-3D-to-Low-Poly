@@ -34,8 +34,18 @@
   <h1>Foto &rarr; 3D</h1>
   <small>Fotogrametria clássica (COLMAP + OpenMVS), sem IA. Gera GLB realista e low poly.</small>
   <div id="tools"></div>
+  <div><label>Motor</label>
+    <select id="engine">
+      <option value="photo">Fotogrametria (sem IA) — 30+ fotos do mesmo objeto</option>
+      <option value="ai">IA imagem→3D (TripoSR) — 1 foto, qualquer cor/ângulo</option>
+    </select></div>
+  <div id="aiopts" hidden>
+    <small>Clique na foto que será usada (melhor: vista 3/4 frontal, objeto inteiro e nítido).</small>
+    <div id="picks" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px"></div>
+    <label class="chk" style="display:flex;gap:6px;margin-top:6px"><input type="checkbox" id="rembg" checked> Remover fundo automaticamente</label>
+  </div>
   <div id="drop">Arraste as fotos aqui<br><small>ou clique para escolher (8+ fotos, ideal 30–80)</small></div>
-  <input id="files" type="file" accept="image/jpeg,image/png,image/tiff" multiple hidden>
+  <input id="files" type="file" accept="image/jpeg,image/png,image/tiff,image/webp" multiple hidden>
   <div id="count"><small>Nenhuma foto selecionada</small></div>
   <div><label>Qualidade</label>
     <select id="quality"><option value="rapido">Rápido (teste)</option><option value="medio" selected>Médio</option><option value="alto">Alto (lento)</option></select></div>
