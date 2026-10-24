@@ -76,7 +76,7 @@ app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   if (hy && !Object.keys(views).length) views.front = pick.path;
   const dims = { lengthM: +req.body.length || 4.3, widthM: +req.body.width || 0, heightM: +req.body.height || 0 };
   const task = tr
-    ? runTrellisJob(job, files.slice(0, 6).map((f) => f.path), { lowPolyTris: opts.lowPolyTris, photoSide: req.body.photoSide, ...dims }, log, step, job.abort.signal)
+    ? runTrellisJob(job, files.slice(0, 6).map((f) => f.path), { lowPolyTris: opts.lowPolyTris, photoSide: req.body.photoSide, cleanLevel: Math.max(0, Math.min(100, req.body.cleanLevel === undefined ? 25 : +req.body.cleanLevel || 0)), ...dims }, log, step, job.abort.signal)
     : hy
     ? runHunyuanJob(job, views, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0', lengthM: +req.body.length || 4.3, widthM: +req.body.width || 0, heightM: +req.body.height || 0 }, log, step, job.abort.signal)
     : ai

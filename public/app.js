@@ -122,7 +122,8 @@ function viewMap() {
   [...$('picks').children].forEach((c, i) => { const v = c.querySelector('select').value; if (v) m[photos[i].name] = v; });
   return m;
 }
-$('engine').onchange = () => { $('aiopts').hidden = !isAi(); $('quality').parentElement.hidden = isAi(); document.querySelectorAll('#picks select').forEach((s) => (s.hidden = !isHy())); $('dims').hidden = !isHy() && $('engine').value !== 'trellis'; $('side').hidden = $('engine').value !== 'trellis'; refreshGo(); };
+$('clean').oninput = () => ($('cleanv').textContent = $('clean').value);
+$('engine').onchange = () => { $('aiopts').hidden = !isAi(); $('quality').parentElement.hidden = isAi(); document.querySelectorAll('#picks select').forEach((s) => (s.hidden = !isHy())); $('dims').hidden = !isHy() && $('engine').value !== 'trellis'; $('side').hidden = $('engine').value !== 'trellis'; $('cleanbox').hidden = $('engine').value !== 'trellis'; refreshGo(); };
 $('drop').onclick = () => $('files').click();
 $('files').onchange = (e) => setPhotos(e.target.files);
 $('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
@@ -139,7 +140,7 @@ $('go').onclick = async () => {
   fd.append('engine', $('engine').value);
   fd.append('pick', photos[pick]?.name || '');
   fd.append('removeBg', $('rembg').checked ? '1' : '0');
-  fd.append('photoSide', $('photoSide').value); fd.append('length', $('dl').value); fd.append('width', $('dw').value); fd.append('height', $('dh').value);
+  fd.append('photoSide', $('photoSide').value); fd.append('cleanLevel', $('clean').value); fd.append('length', $('dl').value); fd.append('width', $('dw').value); fd.append('height', $('dh').value);
   fd.append('views', JSON.stringify(isHy() ? viewMap() : {}));
   const chosen = isHy() ? photos.filter((f) => viewMap()[f.name]) : $('engine').value === 'trellis' ? photos.slice(0, 6) : isAi() ? [photos[pick]] : photos;
   (chosen.length ? chosen : [photos[0]]).forEach((f) => fd.append('photos', f));

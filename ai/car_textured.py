@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from car_tools import detect_wheels, _rot_y, _tr  # noqa: E402
 from car_wheels import wheel_parts  # noqa: E402
 from project_colors import ColorProjector  # noqa: E402
-from car_geometry import clean_geometry, straighten_yaw  # noqa: E402
+from car_geometry import clean_geometry, params_from_level, straighten_yaw  # noqa: E402
 
 
 def load_mesh(path):
@@ -104,14 +104,14 @@ def add_wheel(scene, wh, source_mesh, mode, segs, log=print):
         scene.add_geometry(part, node_name=f"{name}_mesh", geom_name=f"{name}_mesh", parent_node_name=name)
 
 
-def process(in_glb, out_glb, wheel_mode="original", front_image=None, front_dir=None, length=4.3, width=0.0, height=0.0, log=print, clean=True):
+def process(in_glb, out_glb, wheel_mode="original", front_image=None, front_dir=None, length=4.3, width=0.0, height=0.0, log=print, clean_level=25):
     m = load_mesh(in_glb)
     if front_dir is None and front_image is not None:
         front_dir = front_direction(m, np.array(Image.open(front_image).convert("RGBA")), log)
     log(f"[carro] frente do carro: {front_dir or '(+z por padrao)'}")
     orient_scale(m, front_dir, length, width, height, log)
     wheels = detect_wheels(m, log)
-    if clean and straighten_yaw(m, wheels, log):
+    if clean_level > 0 and straighten_yaw(m, wheels, log):
         wheels = detect_wheels(m, log)
     wm = face_masks(m, wheels)
     lm = lamp_masks(m)
@@ -124,8 +124,8 @@ def process(in_glb, out_glb, wheel_mode="original", front_image=None, front_dir=
         taken |= k
     log("[carro] faces: " + ", ".join(f"{k}={int(v.sum())}" for k, v in {**lm}.items()) + f", rodas={int(sum(v.sum() for v in wm.values()))}")
 
-    if clean:  # simetria + alisamento (rodas e farois ficam como estao)
-        m.vertices = clean_geometry(m, taken, iters=14 if len(m.faces) > 50000 else 6, log=log)
+    if clean_level > 0:  # simetria + alisamento (rodas e farois ficam como estao)
+        m.vertices = clean_geometry(m, taken, log=log, **params_from_level(clean_level, dense=len(m.faces) > 50000))
     scene = trimesh.Scene()
     body = _sub(m, ~taken)
     scene.add_geometry(body, node_name="Body", geom_name="Body")
@@ -178,7 +178,7 @@ def main():
         return sys.argv[sys.argv.index(n) + 1] if n in sys.argv else d
 
     meta = process(pos[0], pos[1], opt("--wheels", "original"), opt("--front-image"), opt("--front-dir"),
-                   float(opt("--length", 4.3)), float(opt("--width", 0)), float(opt("--height", 0)), clean="--no-clean" not in sys.argv)
+                   float(opt("--length", 4.3)), float(opt("--width", 0)), float(opt("--height", 0)), clean_level=0 if "--no-clean" in sys.argv else float(opt("--clean-level", 25)))
     if opt("--meta"):
         json.dump(meta, open(opt("--meta"), "w"), indent=1)
     print("[carro] pronto")

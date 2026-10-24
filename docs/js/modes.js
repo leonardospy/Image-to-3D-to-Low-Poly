@@ -108,6 +108,7 @@ export function init({ models, show, setStep, $ }) {
     $('lpreview').style.display = 'block';
     refreshLocal();
   });
+  $('lclean').oninput = () => ($('lcv').textContent = $('lclean').value);
   function refreshLocal() { $('lgo').disabled = !(lFile && localOk); }
   async function probeLocal() {
     try {
@@ -129,6 +130,7 @@ export function init({ models, show, setStep, $ }) {
       fd.append('lowPolyTris', $('ltris').value);
       fd.append('length', $('ll').value); fd.append('width', $('lw').value); fd.append('height', $('lh').value);
       fd.append('photoSide', $('lside').value);
+      fd.append('cleanLevel', $('lclean').value);
       for (const f of ($('lengine').value === 'trellis' ? lFiles.slice(0, 6) : [lFile])) fd.append('photos', f); // TRELLIS.2 junta varias fotos do mesmo objeto
       setStep('Enviando a foto ao seu PC...', 2);
       const r = await fetch(`${LOCAL}/api/jobs`, { method: 'POST', body: fd });

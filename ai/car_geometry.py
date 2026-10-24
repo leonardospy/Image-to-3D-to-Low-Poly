@@ -43,6 +43,18 @@ def straighten_yaw(m, wheels, log=print):
     return a
 
 
+def params_from_level(level, dense=True):
+    """Nivel 0-100 -> parametros. 0 = nada; ~25 = padrao (alisa ruido, mantem vincos); 100 = forte (arredonda ate vincos suaves)."""
+    t = max(0.0, min(100.0, float(level))) / 100.0
+    iters = int(round(60 * t)) if dense else int(round(26 * t))
+    return dict(
+        iters=max(1, iters) if t > 0 else 0,
+        sym_weight=0.5 * min(1.0, t / 0.25),       # simetria completa (media dos dois lados) a partir de 25%
+        sym_dist=0.04 + 0.08 * t,                   # distancia maxima para considerar o ponto espelhado
+        crease=0.12 + 0.55 * max(0.0, t - 0.25),    # acima do padrao, vincos suaves tambem sao alisados
+    )
+
+
 def clean_geometry(m, protect_faces, iters=14, lamb=0.5, nu=-0.53, crease=0.12, sym_dist=0.06, sym_weight=0.5, log=print):
     """Simetriza em X e alisa (Taubin) com peso reduzido perto de vincos. Retorna novas posicoes de vertice."""
     inv = _weld(m.vertices)
@@ -97,6 +109,6 @@ def clean_geometry(m, protect_faces, iters=14, lamb=0.5, nu=-0.53, crease=0.12, 
             L = (A @ P) / deg[:, None] - P
             P += (s * w)[:, None] * L
 
-    log(f"[carro] geometria: assimetria {before * 1000:.1f} mm -> {asymmetry(P) * 1000:.1f} mm; "
+    log(f"[carro] geometria (iters={iters}, simetria={sym_weight:.2f}): assimetria {before * 1000:.1f} mm -> {asymmetry(P) * 1000:.1f} mm; "
         f"{int((w > 0.5).sum())}/{n} vertices alisados (vincos preservados)")
     return P[inv]

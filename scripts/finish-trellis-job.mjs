@@ -1,6 +1,6 @@
 // Conclui um job TRELLIS.2 que foi interrompido depois que o ComfyUI ja tinha gerado os GLBs
 // (ex.: o servidor foi reiniciado no meio). Uso:
-//   node scripts/finish-trellis-job.mjs <jobId> [comprimento=4.3] [largura=0] [altura=0] [front|rear=front] [triangulosLow]
+//   node scripts/finish-trellis-job.mjs <jobId> [comprimento=4.3] [largura=0] [altura=0] [front|rear=front] [nivelCorrecao=25]
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { finalizeCar } from '../lib/car.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const [id, length = '4.3', width = '0', height = '0', side = 'front'] = process.argv.slice(2);
+const [id, length = '4.3', width = '0', height = '0', side = 'front', clean = '25'] = process.argv.slice(2);
 if (!id) throw new Error('Informe o id do job');
 let cfg = {};
 try { cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8')); } catch {}
@@ -29,7 +29,7 @@ const find = (tag) => {
 for (const [name, src, wheels, tex, cc] of [['realistic', find('hi'), 'original', 4096, true], ['lowpoly', find('lo'), 'procedural', 2048, false]]) {
   const raw = path.join(car, `${name}.glb`), metaPath = path.join(car, `${name}.json`);
   const r = spawnSync(py, [path.join(root, 'ai', 'car_textured.py'), src, raw, '--wheels', wheels,
-    '--front-dir', side === 'rear' ? '-z' : '+z', '--length', length, '--width', width, '--height', height, '--meta', metaPath], { stdio: 'inherit' });
+    '--front-dir', '+z', '--length', length, '--width', width, '--height', height, '--meta', metaPath, '--clean-level', clean], { stdio: 'inherit' });
   if (r.status !== 0) throw new Error('car_textured.py falhou');
   const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
   meta.dims = { length: meta.length, width: meta.width, height: meta.height };
