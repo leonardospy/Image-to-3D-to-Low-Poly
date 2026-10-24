@@ -24,6 +24,16 @@ Nenhum modelo de IA: só geometria multi-vista (SIFT, bundle adjustment, PatchMa
 
 Modo navegador: https://leonardospy.github.io/Image-to-3D-to-Low-Poly/ (ativar em Settings → Pages → Branch `main` / pasta `/docs`). Há um botão "Testar com exemplo". Teste do algoritmo: `node scripts/test-hull.js`.
 
+### Fotos em volta (navegador, modo padrão do Pages)
+Roda 100% no navegador, em qualquer plataforma (Chrome/Edge/Firefox/Safari, desktop ou celular): 4 a 60 fotos tiradas andando em volta do objeto, com a câmera na mão e qualquer fundo → GLB realista (malha de até 300 mil triângulos com textura feita das próprias fotos) e low poly texturizado.
+1. A IA RMBG-1.4 (transformers.js, WebGPU quando houver) recorta o objeto em cada foto.
+2. A posição de cada foto é estimada pela coerência entre silhuetas: elevação e perspectiva comuns, depois o ângulo, o centro e a escala de cada foto, com os ângulos mantidos na ordem da volta.
+3. Escultura por silhuetas suaves em grade fina, corte da "quilha" abaixo do chão, simetria opcional, Surface Nets e suavização de Taubin.
+4. Textura: para cada triângulo, a foto que o vê mais de frente (com teste de visibilidade), escolha suavizada entre vizinhos, ganho de cor por foto e atlas JPEG de até 4096².
+5. O campo "O que está nas fotos?" (`docs/js/scene-text.js`) ajusta simetria (espelhada para carro, pessoa, cadeira…; de revolução para garrafa, vaso…), tamanho real em metros, rugosidade/metal, por onde a volta começou, meia volta, sentido e se o objeto está apoiado no chão.
+
+Saída: metros, Y para cima, chão em y=0, frente (1ª foto) em +Z, plano de simetria em x=0; nó `Body` para carros. Limites: cavidades (caixa de roda, interior, vãos) não aparecem só com silhuetas; reflexos das fotos ficam na textura. Teste com fotos sintéticas: servir a raiz do repositório e abrir `docs/?synth=/data/test/<modelo>.glb&desc=carro&n=24&auto=1`.
+
 ## Instalação
 
 1. **Node 18+** (já usado: v24).

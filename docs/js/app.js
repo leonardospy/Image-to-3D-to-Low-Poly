@@ -248,3 +248,4 @@ $('go').onclick = async () => {
 
 // Modos extras: foto unica (IA no navegador) e gerador local
 import('./modes.js').then((m) => m.init({ models, show, setStep, $ }));
+import('./mvmode.js').then((m) => m.init({ models, show, setStep, $ }));

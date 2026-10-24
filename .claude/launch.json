@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pages",
+      "runtimeExecutable": "D:\\Projetos Claude\\Gerando 3D\\ai\\venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "http.server", "8090", "--directory", "D:\\Projetos Claude\\Gerando 3D"],
+      "port": 8090
+    }
+  ]
+}

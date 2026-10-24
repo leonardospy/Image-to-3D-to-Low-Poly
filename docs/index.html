@@ -11,7 +11,7 @@
   aside { background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow:auto; display:flex; flex-direction:column; gap:12px; }
   h1 { font-size:18px; margin:0; }
   label { display:block; color:var(--muted); font-size:12px; margin-bottom:3px; }
-  select,input[type=number] { width:100%; padding:7px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
+  select,input[type=number],textarea { width:100%; padding:7px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; }
   input[type=range] { width:100%; }
   .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   #drop { border:2px dashed var(--line); border-radius:10px; padding:18px 10px; text-align:center; color:var(--muted); cursor:pointer; }
@@ -32,6 +32,12 @@
   .dz { border:2px dashed var(--line); border-radius:10px; padding:18px 10px; text-align:center; color:var(--muted); cursor:pointer; }
   .dz.over { border-color:var(--acc); color:var(--fg); }
   small, .hint { color:var(--muted); font-size:12px; line-height:1.4; }
+  textarea { resize:vertical; font:inherit; }
+  .chip { display:inline-block; background:var(--line); color:var(--fg); border-radius:10px; padding:1px 8px; margin:2px 2px 0 0; }
+  #mthumbs { display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:4px; }
+  .mth { position:relative; }
+  .mth canvas { width:100%; display:block; border-radius:4px; }
+  .mth span { position:absolute; left:2px; bottom:2px; font-size:10px; background:rgba(0,0,0,.6); padding:0 3px; border-radius:3px; }
   details { border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   summary { cursor:pointer; font-weight:600; }
   a { color:var(--acc); }
@@ -43,8 +49,23 @@
 <aside>
   <h1>Foto &rarr; 3D <small>(no navegador)</small></h1>
   <small>Gera modelo 3D realista e low poly (GLB para Three.js) a partir de fotos. Escolha o modo abaixo. Código: <a href="https://github.com/leonardospy/Image-to-3D-to-Low-Poly">GitHub</a>.</small>
-  <div><label>Modo</label><select id="mode"><option value="single">Qualquer foto — 1 foto, IA no navegador (relevo 3D)</option><option value="local">Meu PC — TRELLIS.2, 3D completo (gerador local ligado)</option><option value="turntable">Mesa giratória — 8 a 72 fotos, sem IA</option></select></div>
-  <div id="single">
+  <div><label>Modo</label><select id="mode"><option value="multi">Fotos em volta — 4 a 60 fotos, 3D completo com textura (IA no navegador)</option><option value="single">Qualquer foto — 1 foto, IA no navegador (relevo 3D)</option><option value="local">Meu PC — TRELLIS.2, 3D completo (gerador local ligado)</option><option value="turntable">Mesa giratória — 8 a 72 fotos, sem IA</option></select></div>
+  <div id="multi">
+    <small>Tire de 16 a 36 fotos andando em volta do objeto, na mesma distância e altura, com o objeto inteiro no quadro. Comece pela frente. Qualquer fundo serve. Tudo roda aqui no navegador: a IA recorta o objeto, as posições da câmera são calculadas pelas silhuetas e a textura vem das próprias fotos.</small>
+    <div id="mdrop" class="dz">Arraste as fotos aqui, na ordem da volta<br><small>ou clique para escolher</small></div>
+    <input id="mfiles" type="file" accept="image/*" multiple hidden>
+    <div id="mcount"></div>
+    <div id="mthumbs"></div>
+    <div><label>O que está nas fotos? (opcional, melhora o modelo)</label><textarea id="mdesc" rows="3" placeholder="Ex.: carro VW Golf prata, 4,26 m. Comecei pela frente e andei no sentido anti-horário."></textarea><div id="mchips" class="hint"></div></div>
+    <div class="row"><div><label>Qualidade</label><select id="mq"><option value="fast">Rápida</option><option value="medium" selected>Média</option><option value="high">Alta</option></select></div><div><label>Triângulos low poly</label><input id="mtris" type="number" value="5000" min="300" max="50000" step="100"></div></div>
+    <details><summary>Ajustes (o automático costuma bastar)</summary>
+      <div class="row" style="margin-top:8px"><div><label>Volta</label><select id="mspan"><option value="auto">Automática</option><option value="360">Completa (360°)</option><option value="180">Meia volta (180°)</option><option value="90">Só a frente (90°)</option></select></div><div><label>Sentido (visto de cima)</label><select id="mdir"><option value="auto">Detectar</option><option value="ccw">Anti-horário</option><option value="cw">Horário</option></select></div></div>
+      <div class="row" style="margin-top:8px"><div><label>Simetria</label><select id="msym"><option value="auto">Pela descrição</option><option value="none">Nenhuma</option><option value="mirror">Espelhada</option><option value="rot">De revolução</option></select></div><div><label>Maior medida real (m)</label><input id="msize" type="number" step="0.01" min="0.01" placeholder="1"></div></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="mground" checked> Objeto apoiado no chão ou numa mesa (corta o volume abaixo dele)</label>
+    </details>
+    <button id="mgo" disabled>Gerar modelo 3D</button>
+  </div>
+  <div id="single" hidden>
     <small>Funciona com qualquer foto de um objeto, em qualquer ângulo. Duas IAs rodam aqui no navegador (remoção de fundo e profundidade; ~100 MB baixados na 1ª vez). O resultado é um relevo 3D fechado: bom de frente e de 3/4, aproximado nos lados e atrás. Para 3D completo use o modo "Meu PC".</small>
     <div id="sdrop" class="dz">Arraste uma foto aqui<br><small>ou clique para escolher</small></div>
     <input id="sfile" type="file" accept="image/*" hidden>

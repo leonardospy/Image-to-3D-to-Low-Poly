@@ -2,14 +2,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildRelief } from './relief.js';
-import { segment } from './hull.js';
+import * as ai from './ai.js';
 
-const TF = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1';
 const LOCAL = 'http://localhost:3000';
 
 export function init({ models, show, setStep, $ }) {
   // ---------------------------------------------------------------- alternancia de modo
-  const panels = { single: $('single'), local: $('local'), turntable: $('turn') };
+  const panels = { multi: $('multi'), single: $('single'), local: $('local'), turntable: $('turn') };
   let localTimer = 0;
   const setMode = (m) => {
     for (const [k, el] of Object.entries(panels)) el.hidden = k !== m;
@@ -38,45 +37,9 @@ export function init({ models, show, setStep, $ }) {
   });
   $('sdepth').oninput = () => ($('sdv').textContent = $('sdepth').value);
 
-  let tf = null, segModel = null, procRMBG = null, depthPipe = null;
   async function loadModels() {
-    if (!tf) {
-      setStep('Baixando a biblioteca de IA...', 5);
-      tf = await import(TF);
-      tf.env.allowLocalModels = false;
-    }
-    const device = navigator.gpu ? 'webgpu' : 'wasm';
-    if (!segModel) {
-      setStep('Baixando IA de remoção de fundo (1ª vez)...', 12);
-      try {
-        segModel = await tf.AutoModel.from_pretrained('briaai/RMBG-1.4', { config: { model_type: 'custom' } });
-        procRMBG = await tf.AutoProcessor.from_pretrained('briaai/RMBG-1.4', {
-          config: { do_normalize: true, do_pad: false, do_rescale: true, do_resize: true, image_mean: [0.5, 0.5, 0.5], feature_extractor_type: 'ImageFeatureExtractor', image_std: [1, 1, 1], resample: 2, rescale_factor: 0.00392156862745098, size: { width: 1024, height: 1024 } },
-        });
-      } catch (e) {
-        console.warn('RMBG indisponivel, usando separacao por cor de fundo', e);
-        segModel = 'fallback';
-      }
-    }
-    if (!depthPipe) {
-      setStep('Baixando IA de profundidade (1ª vez)...', 30);
-      try {
-        depthPipe = await tf.pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device });
-      } catch (e) {
-        if (device === 'webgpu') depthPipe = await tf.pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device: 'wasm' });
-        else throw e;
-      }
-    }
-  }
-
-  async function foregroundMask(image, w, h, rgba) {
-    if (segModel !== 'fallback') {
-      const { pixel_values } = await procRMBG(image);
-      const { output } = await segModel({ input: pixel_values });
-      const m = await tf.RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(w, h);
-      return Uint8Array.from(m.data);
-    }
-    return segment(rgba, w, h, 40).mask.map((v) => (v ? 255 : 0)); // fundo liso
+    await ai.loadSegmenter(setStep);
+    await ai.loadDepth(setStep);
   }
 
   $('sgo').onclick = async () => {
@@ -84,6 +47,7 @@ export function init({ models, show, setStep, $ }) {
     try {
       await loadModels();
       setStep('Lendo a foto...', 45);
+      const tf = await ai.getTF();
       const image = (await tf.RawImage.fromBlob(sFile)).rgb();
       const maxd = 1024;
       const k = Math.min(1, maxd / Math.max(image.width, image.height));
@@ -97,9 +61,9 @@ export function init({ models, show, setStep, $ }) {
       const rgba = ctx.getImageData(0, 0, w, h).data;
 
       setStep('Separando o objeto do fundo...', 55);
-      const mask = await foregroundMask(img, w, h, rgba);
+      const mask = await ai.foregroundMask(img, w, h, rgba);
       setStep('Estimando a profundidade...', 70);
-      const out = await depthPipe(img);
+      const out = await (await ai.loadDepth())(img);
       const dep = await out.depth.resize(w, h);
       const depth = Uint8Array.from(dep.data);
 

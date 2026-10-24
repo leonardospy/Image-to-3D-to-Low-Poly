@@ -11,7 +11,7 @@ Repositório: https://github.com/leonardospy/Image-to-3D-to-Low-Poly (branch `ma
 | | Localhost (`npm start` → http://localhost:3000, pasta `public/`) | GitHub Pages (pasta `docs/`) |
 |---|---|---|
 | Roda onde | Node + Python + ComfyUI no PC | só no navegador (arquivos estáticos) |
-| Motores | TRELLIS.2 via ComfyUI (padrão, melhor), Hunyuan3D-2, TripoSR, fotogrametria COLMAP/OpenMVS | "Qualquer foto" (IA no navegador, relevo 2.5D), "Meu PC" (ponte para o localhost), "Mesa giratória" (visual hull) |
+| Motores | TRELLIS.2 via ComfyUI (padrão, melhor), Hunyuan3D-2, TripoSR, fotogrametria COLMAP/OpenMVS | "Fotos em volta" (padrão: várias fotos → 3D completo texturizado), "Qualquer foto" (IA no navegador, relevo 2.5D), "Meu PC" (ponte para o localhost), "Mesa giratória" (visual hull) |
 Pages não consegue rodar TRELLIS/Hunyuan (precisam de GPU e GBs de modelos); por isso o modo "Meu PC" chama `http://localhost:3000` por CORS (liberado só para `leonardospy.github.io` e localhost, em `server.js`).
 
 ## Estado dos motores
@@ -19,6 +19,7 @@ Pages não consegue rodar TRELLIS/Hunyuan (precisam de GPU e GBs de modelos); po
 - **Hunyuan3D-2** (`ai/run_hunyuan.py`): 1 foto (mini) ou 2–4 vistas front/left/back/right (mv). Forma boa, **sem cor própria**: a cor é projetada das fotos (`ai/project_colors.py`, câmeras ortográficas alinhadas aos eixos). Licença **Tencent não comercial** (não vale em UE/UK/Coreia do Sul).
 - **TripoSR**: roda, qualidade ruim em carros. Licença MIT. (Patch `ai/isosurface_patch.py` troca `torchmcubes` por scikit-image.)
 - **Fotogrametria COLMAP 4.2.1 + OpenMVS 2.4** (`lib/pipeline.js`, binários em `tools/`): instalada e detectada (`npm run check`), **nunca rodada com fotos reais**.
+- **Pages "Fotos em volta"** (padrão do Pages, 100% navegador): `docs/js/mvmode.js` (interface), `docs/js/multiview.js` (recorte → poses por silhueta → escultura → chão → simetria → malha → textura por foto), `docs/js/scene-text.js` (lê a descrição da cena), `docs/js/ai.js` (RMBG compartilhado, WebGPU com volta para CPU). Testado só com fotos sintéticas (`docs/js/synth.js`, `?synth=/data/test/trellis_golf.glb&desc=carro&n=24&auto=1`, servidor `pages` em `.claude/launch.json`, porta 8090): erro médio de ângulo ~2,5°, proporções a ~5% da verdade, ~12 s após o recorte (24 fotos). Lições: otimizar o azimute só por silhueta piora (carro); por isso há penalidade por se afastar do espaçamento uniforme e os ângulos ficam na ordem. A escala inicial é comum a todas as fotos.
 - **Pages "Qualquer foto"**: transformers.js 3.5.1 (CDN) com RMBG-1.4 (remove fundo) + Depth-Anything-V2-small (profundidade) → `docs/js/relief.js` monta relevo fechado (frente boa, lados/trás aproximados). Testado só com o Golf.
 
 ## Pipeline de carro (o que torna o GLB "pronto para jogo")
@@ -51,8 +52,10 @@ Convenção de saída: **metros, Y para cima, frente em +Z, +X = lado esquerdo, 
 3. Pages: o modo "Meu PC" foi só testado até a detecção do servidor (uma geração completa por ele e o seletor TRELLIS/Hunyuan não foram exercitados); layout mobile não foi testado.
 4. TRELLIS aceita 1 foto; sem fusão de várias fotos.
 5. O modo "Qualquer foto" do Pages é 2.5D (não substitui o 3D completo).
+6. "Fotos em volta" só viu fotos sintéticas; depende da ordem das fotos (seguem a volta) e de a 1ª mostrar a frente (ou dizer na descrição). Cavidades não aparecem (só silhuetas). O RMBG-1.4 tem licença não comercial da BRIA.
 
 ## Próximos passos sugeridos
+- "Fotos em volta": testar com fotos reais de celular; recuperar cavidades (caixas de roda, janelas) com profundidade (Depth-Anything) ou consistência de cor; mesclar 2 fotos nas emendas da textura; separar rodas/faróis como no pipeline de carro.
 - Rodar o TRELLIS com outros carros e ajustar as heurísticas (raio de roda, regiões de faróis); separar lanternas traseiras de forma confiável.
 - Testar o modo "Meu PC" a partir da página publicada (Chrome/Edge/Firefox; Safari bloqueia https→localhost).
 - Opcional: unificar a interface de `public/` e `docs/`; perfil de foto lateral no TRELLIS; exportar sem o tratamento de carro para outros objetos (modo "objeto genérico").
