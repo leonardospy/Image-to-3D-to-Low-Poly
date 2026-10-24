@@ -15,16 +15,14 @@ Nenhum modelo de IA: só geometria multi-vista (SIFT, bundle adjustment, PatchMa
 
 ## Dois modos
 
-| | Modo servidor (este README) | Modo navegador (GitHub Pages, pasta ) |
+| | Modo servidor (este README) | Modo navegador (GitHub Pages, pasta `docs/`) |
 |---|---|---|
 | Entrada | fotos soltas, qualquer ângulo | fotos de mesa giratória, fundo liso |
 | Método | COLMAP + OpenMVS (fotogrametria) | silhuetas / visual hull + cor projetada |
 | Qualidade | alta, textura real | forma aproximada, cor por vértice |
 | Instalação | COLMAP, OpenMVS, Node | nenhuma |
 
-Modo navegador: https://leonardospy.github.io/Image-to-3D-to-Low-Poly/ (ativar em Settings → Pages → Branch  / pasta ). Há um botão "Testar com exemplo". Teste do algoritmo: 	ris 84624 extents xyz (esperado ~120 x 200 x 60): [ 120.8, 201.3, 60.4 ] volume 1462658 (esperado ~1.44e6)
-cor do 1o vertice [ 0.86, 0.16, 0.12 ]
-low poly tris 600 ms 349.
+Modo navegador: https://leonardospy.github.io/Image-to-3D-to-Low-Poly/ (ativar em Settings → Pages → Branch `main` / pasta `/docs`). Há um botão "Testar com exemplo". Teste do algoritmo: `node scripts/test-hull.js`.
 
 ## Instalação
 
