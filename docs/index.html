@@ -85,6 +85,7 @@
     <input id="lfile" type="file" accept="image/*" multiple hidden>
     <img id="lpreview" alt="" style="width:100%;border-radius:6px;display:none">
     <div><label>Motor no seu PC</label><select id="lengine"><option value="trellis">TRELLIS.2 via ComfyUI (melhor qualidade, texturas PBR)</option><option value="hunyuan">Hunyuan3D-2 (forma + cor projetada; licença não comercial)</option></select></div>
+    <div id="lstylebox"><label>Estilo do low poly (TRELLIS.2)</label><select id="lstyle"><option value="textured">Texturizado (mapas assados do realista)</option><option value="stylized">Estilizado: cores sólidas, simétrico (precisa do Blender no PC)</option></select></div>
     <div id="lcleanbox"><label>Correção geométrica (TRELLIS.2): <span id="lcv">25</span>% <small>— 0 nenhuma · 25 padrão · 100 forte</small></label><input id="lclean" type="range" min="0" max="100" value="25"></div>
     <div><label>Medidas reais (m): comprimento, largura, altura</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px"><input id="ll" type="number" step="0.01" value="4.30"><input id="lw" type="number" step="0.01" placeholder="largura"><input id="lh" type="number" step="0.01" placeholder="altura"></div></div>
     <div class="row"><div><label>A foto mostra a</label><select id="lside"><option value="front">frente / 3/4 frontal</option><option value="rear">traseira</option></select></div><div><label>Triângulos low poly</label><input id="ltris" type="number" value="6000" min="500" max="40000" step="500"></div></div>

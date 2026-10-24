@@ -38,6 +38,9 @@ Uma foto só (`docs/js/onephoto.js`): a página gera as outras vistas sem IA gen
 
 Saída: metros, Y para cima, chão em y=0, frente (1ª foto) em +Z, plano de simetria em x=0; nó `Body` para carros. Limites: cavidades (caixa de roda, interior, vãos) não aparecem só com silhuetas; reflexos das fotos ficam na textura. Teste com fotos sintéticas: servir a raiz do repositório e abrir `docs/?synth=/data/test/<modelo>.glb&desc=carro&n=24&auto=1`.
 
+### Low poly estilizado (gerador local + Blender)
+No gerador local, com o motor TRELLIS.2, escolha "Estilo do low poly: Estilizado". O realista sai do TRELLIS.2 e o Blender gera um low poly de ~5 mil triângulos, simétrico, com facetas planas e cores sólidas tiradas da textura: tinta, vidros, frisos, faróis, lanternas e rodas de 5 raios. Não usa textura, e a tinta (`CarPaint`) pode ter a cor trocada no jogo. Precisa do Blender instalado; o caminho pode ser definido em `config.json` (`"blender": "C:/.../blender.exe"`). Uso direto: `blender -b --python scripts/blender-stylize-car.py -- realistic.glb lowpoly.glb --tris 5000 --colors 10`.
+
 ## Instalação
 
 1. **Node 18+** (já usado: v24).
