@@ -21,10 +21,10 @@ export function init({ models, show, setStep, $ }) {
 
   const bindDrop = (zone, input, onFile) => {
     zone.onclick = () => input.click();
-    input.onchange = () => input.files[0] && onFile(input.files[0]);
+    input.onchange = () => input.files[0] && onFile(input.files[0], [...input.files]);
     zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('over'); };
     zone.ondragleave = () => zone.classList.remove('over');
-    zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) onFile(f); };
+    zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) onFile(f, [...e.dataTransfer.files]); };
   };
 
   // ---------------------------------------------------------------- foto unica (IA no navegador)
@@ -100,9 +100,10 @@ export function init({ models, show, setStep, $ }) {
   };
 
   // ---------------------------------------------------------------- gerador local (TRELLIS.2)
-  let lFile = null, localOk = false;
-  bindDrop($('ldz'), $('lfile'), (f) => {
+  let lFile = null, lFiles = [], localOk = false;
+  bindDrop($('ldz'), $('lfile'), (f, all) => {
     lFile = f;
+    lFiles = all || [f];
     $('lpreview').src = URL.createObjectURL(f);
     $('lpreview').style.display = 'block';
     refreshLocal();
@@ -128,7 +129,7 @@ export function init({ models, show, setStep, $ }) {
       fd.append('lowPolyTris', $('ltris').value);
       fd.append('length', $('ll').value); fd.append('width', $('lw').value); fd.append('height', $('lh').value);
       fd.append('photoSide', $('lside').value);
-      fd.append('photos', lFile);
+      for (const f of ($('lengine').value === 'trellis' ? lFiles.slice(0, 6) : [lFile])) fd.append('photos', f); // TRELLIS.2 junta varias fotos do mesmo objeto
       setStep('Enviando a foto ao seu PC...', 2);
       const r = await fetch(`${LOCAL}/api/jobs`, { method: 'POST', body: fd });
       const j = await r.json();

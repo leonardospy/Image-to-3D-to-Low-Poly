@@ -141,7 +141,7 @@ $('go').onclick = async () => {
   fd.append('removeBg', $('rembg').checked ? '1' : '0');
   fd.append('photoSide', $('photoSide').value); fd.append('length', $('dl').value); fd.append('width', $('dw').value); fd.append('height', $('dh').value);
   fd.append('views', JSON.stringify(isHy() ? viewMap() : {}));
-  const chosen = isHy() ? photos.filter((f) => viewMap()[f.name]) : isAi() ? [photos[pick]] : photos;
+  const chosen = isHy() ? photos.filter((f) => viewMap()[f.name]) : $('engine').value === 'trellis' ? photos.slice(0, 6) : isAi() ? [photos[pick]] : photos;
   (chosen.length ? chosen : [photos[0]]).forEach((f) => fd.append('photos', f));
   $('step').innerHTML = '<small>Enviando fotos...</small>';
   const r = await fetch('/api/jobs', { method: 'POST', body: fd });
