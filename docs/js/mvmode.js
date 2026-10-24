@@ -8,6 +8,8 @@ import { parseScene } from './scene-text.js';
 const D2R = Math.PI / 180;
 const TEXMAX = matchMedia('(pointer: coarse)').matches ? 1024 : 1280; // maior lado das fotos usadas na textura (menor no celular)
 const tick = () => new Promise((r) => setTimeout(r, 0));
+// vista de cada foto (azimute: 0 = frente, +90 = lado esquerdo do objeto)
+const VIEWS = [['', 'vista: auto'], ['0', 'frente'], ['45', 'frente-esq.'], ['90', 'lado esq.'], ['135', 'tras.-esq.'], ['180', 'traseira'], ['225', 'tras.-dir.'], ['270', 'lado dir.'], ['315', 'frente-dir.']];
 const QUALITY = {
   fast: { res: 128, faces: 80000, atlas: 2048, lowAtlas: 1024 },
   medium: { res: 176, faces: 160000, atlas: 4096, lowAtlas: 2048 },
@@ -31,7 +33,7 @@ export function init({ models, show, setStep, $ }) {
   // ------------------------------------------------------------ fotos
   const natural = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   async function setFiles(fileList) {
-    const files = [...fileList].filter((f) => f.type.startsWith('image/')).sort(natural).slice(0, 60);
+    const files = [...fileList].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|avif|gif|bmp|heic)$/i.test(f.name)).sort(natural).slice(0, 60);
     if (!files.length) return;
     const job = ++maskJob;
     photos = [];
@@ -50,9 +52,12 @@ export function init({ models, show, setStep, $ }) {
       thumb.getContext('2d').drawImage(bitmap, 0, 0, thumb.width, thumb.height);
       const cell = document.createElement('div');
       cell.className = 'mth';
-      cell.append(thumb, Object.assign(document.createElement('span'), { textContent: '' }));
+      const view = document.createElement('select');
+      view.title = 'O que esta foto mostra (opcional; use se as fotos estiverem fora de ordem)';
+      view.innerHTML = VIEWS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+      cell.append(thumb, view, Object.assign(document.createElement('span'), { textContent: '' }));
       $('mthumbs').append(cell);
-      photos.push({ name: f.name, bitmap, w, h, mask: null, thumb, cell });
+      photos.push({ name: f.name, bitmap, w, h, mask: null, thumb, cell, view });
     }
     if (photos.length < 4) {
       setStep('Use pelo menos 4 fotos (ideal: 16 a 36). Para uma foto só, use o modo "Qualquer foto".', 0);
@@ -139,7 +144,7 @@ export function init({ models, show, setStep, $ }) {
     return { g, m, W, H };
   }
 
-  function texturedMesh(P, I, N, views, cams, choice, atlasSize, mat) {
+  function texturedMesh(ph, P, I, N, views, cams, choice, atlasSize, mat) {
     const lay = MV.layoutAtlas(P, I, choice, views, atlasSize);
     const atlas = document.createElement('canvas');
     atlas.width = atlas.height = atlasSize;
@@ -148,7 +153,7 @@ export function init({ models, show, setStep, $ }) {
     actx.fillRect(0, 0, atlasSize, atlasSize);
     for (const it of lay.items) {
       const dw = Math.max(1, Math.round(it.w * it.k)), dh = Math.max(1, Math.round(it.h * it.k));
-      actx.drawImage(photos[it.v].bitmap, it.x0, it.y0, it.w, it.h, it.ax, it.ay, dw, dh);
+      actx.drawImage(ph[it.v].bitmap, it.x0, it.y0, it.w, it.h, it.ax, it.ay, dw, dh);
       const g = choice.gains[it.v];
       if (Math.abs(g[0] - 1) + Math.abs(g[1] - 1) + Math.abs(g[2] - 1) > 0.01) {
         const im = actx.getImageData(it.ax, it.ay, dw, dh), d = im.data;
@@ -211,25 +216,52 @@ export function init({ models, show, setStep, $ }) {
       const sym = $('msym').value === 'auto' ? hint.sym || 'none' : $('msym').value;
       const start = (hint.start || 0) * D2R;
 
-      setStep('Preparando silhuetas...', 2); await tick();
-      const views = MV.prepareViews(photos.map((p) => ({ mask: p.mask, w: p.w, h: p.h })));
-
-      let dir = $('mdir').value === 'ccw' ? 1 : $('mdir').value === 'cw' ? -1 : hint.dir === 'ccw' ? 1 : hint.dir === 'cw' ? -1 : 0;
-      let dirNote = '';
-      if (!dir) {
-        dir = MV.estimateDirection(views.map((v, i) => grayOf(photos[i], v.box)));
-        dirNote = dir ? ` (sentido detectado: ${dir > 0 ? 'anti-horário' : 'horário'})` : '';
-        if (!dir) dir = 1;
+      // vistas informadas por foto: as fotos sao reordenadas pelo angulo; as sem vista ficam entre as vizinhas
+      const given = photos.map((p) => (p.view.value === '' ? null : +p.view.value * D2R));
+      const anyGiven = given.some((g) => g != null);
+      let ph = photos, az0 = null;
+      if (anyGiven) {
+        const gi = given.map((g, i) => (g != null ? i : -1)).filter((i) => i >= 0);
+        az0 = given.map((g, i) => {
+          if (g != null) return g;
+          let a = gi.filter((j) => j < i).pop(), b = gi.find((j) => j > i);
+          if (a === undefined) a = gi[gi.length - 1];
+          if (b === undefined) b = gi[0];
+          const da = (i - a + n) % n || n, db = (b - a + n) % n || n;
+          let A = given[a], Bz = given[b];
+          while (Bz <= A) Bz += 2 * Math.PI;
+          return A + ((Bz - A) * da) / db;
+        }).map((a) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI));
+        const order = photos.map((_, i) => i).sort((p, q) => az0[p] - az0[q]);
+        ph = order.map((i) => photos[i]);
+        az0 = order.map((i) => az0[i]);
       }
+      const varied = anyGiven || $('mvaried').checked;
+
+      setStep('Preparando silhuetas...', 2); await tick();
+      const views = MV.prepareViews(ph.map((p) => ({ mask: p.mask, w: p.w, h: p.h })));
+
+      let dir = 1, dirNote = '', cams;
       const miss = n >= 10 ? 1 : 0;
-      let cams = MV.initialCameras(views, { span, dir, start });
+      if (anyGiven) {
+        cams = MV.initialCameras(views, { span: 2 * Math.PI, dir: 1 });
+        cams.forEach((c, i) => (c.az = az0[i]));
+      } else {
+        dir = $('mdir').value === 'ccw' ? 1 : $('mdir').value === 'cw' ? -1 : hint.dir === 'ccw' ? 1 : hint.dir === 'cw' ? -1 : 0;
+        if (!dir) {
+          dir = MV.estimateDirection(views.map((v, i) => grayOf(ph[i], v.box)));
+          dirNote = dir ? ` (sentido detectado: ${dir > 0 ? 'anti-horário' : 'horário'})` : '';
+          if (!dir) dir = 1;
+        }
+        cams = MV.initialCameras(views, { span, dir, start });
+      }
       cams = await MV.refinePoses(views, cams, {
-        miss, tick, dir, span,
+        miss, tick, dir: anyGiven ? 1 : dir, span: anyGiven ? 2 * Math.PI : span, varied, rounds: varied ? 4 : 3,
         onProgress: (f, msg) => setStep(`Calculando a posição de cada foto (${msg})${dirNote}...`, 5 + 35 * f),
       });
-      cams.forEach((c, i) => (photos[i].cell.lastChild.textContent = `${Math.round((((c.az / D2R) % 360) + 360) % 360)}° · ${Math.round(c.score * 100)}%`));
+      cams.forEach((c, i) => (ph[i].cell.lastChild.textContent = `${Math.round((((c.az / D2R) % 360) + 360) % 360)}° · ${Math.round(c.score * 100)}%`));
       const fit = cams.reduce((s, c) => s + c.score, 0) / n;
-      window.__mv = { photos, views, cams, MV, models };
+      window.__mv = { photos: ph, views, cams, MV, models };
 
       setStep('Esculpindo o volume em alta resolução...', 42); await tick();
       const R = Math.max(...views.map((v, i) => Math.max(cams[i].cu - v.box.x0, v.box.x1 - cams[i].cu) / cams[i].s)) * 1.15;
@@ -253,7 +285,7 @@ export function init({ models, show, setStep, $ }) {
       const real = decimate(positions, indices, Q.faces, 0.01);
       const low = decimate(positions, indices, Math.max(200, +$('mtris').value), 0.2);
 
-      const colors = photos.map((p) => p.small);
+      const colors = ph.map((p) => p.small);
       const mat = { rough: hint.rough ?? 0.6, metal: hint.metal ?? 0, name: hint.category === 'carro' ? 'Body' : 'Model' };
       const build = async (mesh, atlasSize, p0, p1, label) => {
         const N = MV.vertexNormals(mesh.positions, mesh.indices);
@@ -261,7 +293,7 @@ export function init({ models, show, setStep, $ }) {
           eps: grid.vs * 2.5, colors, tick,
           onProgress: (f) => setStep(`Texturizando o ${label} com as fotos...`, p0 + (p1 - p0) * f),
         });
-        return texturedMesh(mesh.positions, mesh.indices, N, views, cams, choice, atlasSize, mat);
+        return texturedMesh(ph, mesh.positions, mesh.indices, N, views, cams, choice, atlasSize, mat);
       };
       const realMesh = await build(real, Q.atlas, 60, 85, 'modelo realista');
       const lowMesh = await build(low, Q.lowAtlas, 86, 97, 'low poly');

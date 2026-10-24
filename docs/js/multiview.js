@@ -204,6 +204,36 @@ function silhouetteIoU(pts, vs, c, lo) {
   return uni ? inter / uni : 0;
 }
 
+// desloca (cu, cr) para o centro da silhueta projetada coincidir com o centro da caixa da mascara
+function recenter(pts, c, box) {
+  const B = basis(c.az, c.el);
+  let u0 = Infinity, u1 = -Infinity, r0 = Infinity, r1 = -Infinity;
+  for (let p = 0; p < pts.length; p += 3) {
+    const x = pts[p], y = pts[p + 1], z = pts[p + 2];
+    const kk = 1 / Math.max(0.2, 1 - c.persp * (x * B.d[0] + y * B.d[1] + z * B.d[2]));
+    const u = c.cu + c.s * kk * (x * B.r[0] + z * B.r[2]), r = c.cr - c.s * kk * (x * B.u[0] + y * B.u[1] + z * B.u[2]);
+    if (u < u0) u0 = u; if (u > u1) u1 = u; if (r < r0) r0 = r; if (r > r1) r1 = r;
+  }
+  if (u1 < u0) return;
+  c.cu += (box.x0 + box.x1) / 2 - (u0 + u1) / 2;
+  c.cr += (box.y0 + box.y1) / 2 - (r0 + r1) / 2;
+}
+
+// busca grossa de elevacao e escala de uma foto (com recentralizacao), para fotos de alturas e zoom diferentes
+function sweepElScale(pts, vs, c, view, scaleFree, obj, elMin, elMax) {
+  if (!pts.length) return;
+  let best = { s: -Infinity };
+  const s0 = c.s;
+  for (let el = Math.max(elMin, 0); el <= elMax + 1e-6; el += 7 * D2R)
+    for (const f of scaleFree ? [0.7, 0.8, 0.9, 1, 1.12, 1.25, 1.4] : [1]) {
+      c.el = el; c.s = s0 * f;
+      recenter(pts, c, view.box);
+      const s = obj();
+      if (s > best.s) best = { s, el, sc: c.s, cu: c.cu, cr: c.cr };
+    }
+  Object.assign(c, { el: best.el, s: best.sc, cu: best.cu, cr: best.cr });
+}
+
 // pontuacao de uma vista: casco feito pelas OUTRAS fotos, projetado nesta
 function looScore(views, cams, v, res, miss) {
   const { R, Ry } = bounds(views, cams);
@@ -222,7 +252,7 @@ export function meanScore(views, cams, res, miss) {
 
 // Ajusta as poses: primeiro elevacao/perspectiva comuns, depois cada foto (azimute, elevacao, deslocamento e, no fim,
 // escala). Os azimutes ficam na ordem das fotos (cada um entre os vizinhos), o que evita trocar um lado pelo outro.
-export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgress = () => {}, tick = async () => {}, fixEl = null, global = true, free = ['az', 'el', 's', 'cu', 'cr'], dir = 1, span = 2 * Math.PI, azPrior = 0.00015 } = {}) {
+export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgress = () => {}, tick = async () => {}, fixEl = null, global = true, free = ['az', 'el', 's', 'cu', 'cr'], dir = 1, span = 2 * Math.PI, azPrior = 0.00015, varied = false } = {}) {
   const n = views.length;
   cams = cams.map((c) => ({ ...c }));
   const prior = cams.map((c) => c.az);
@@ -244,6 +274,8 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
     }
   if (global) { setAll('el', bestEl); setAll('persp', bestP); }
   const el0 = cams[0].el;
+  // fotos variadas (alturas e zoom diferentes): cada foto procura a propria elevacao e escala
+  const elMin = varied ? -5 * D2R : el0 - 8 * D2R, elMax = varied ? 65 * D2R : el0 + 8 * D2R;
 
   // 2) por foto (descida coordenada); a foto 0 fixa o azimute e a origem; a escala so entra na ultima rodada
   const gap = 1.5 * D2R;
@@ -260,10 +292,11 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
       const { pts, vs } = looScore(views, cams, v, last ? 56 : 40, miss);
       const c = cams[v], b = views[v].box, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
       let params = v === 0 ? [['el', 4 * D2R]] : [['az', 8 * D2R], ['cu', 0.04 * bw], ['cr', 0.04 * bh], ['el', 3 * D2R]];
-      if (last && v > 0) params.push(['s', 0.04]);
+      if ((last || varied) && v > 0) params.push(['s', 0.04]);
       params = params.filter(([k]) => free.includes(k));
       // custo extra por se afastar do espacamento uniforme: so silhuetas deixam o azimute mal determinado
       const obj = () => silhouetteIoU(pts, vs, c, views[v].lo) - azPrior * ((c.az - prior[v]) / D2R) ** 2;
+      if (varied && round < rounds - 1) sweepElScale(pts, vs, c, views[v], v > 0, obj, elMin, elMax);
       let cur = obj();
       for (const sc of steps)
         for (let pass = 0; pass < 3; pass++) {
@@ -273,7 +306,7 @@ export async function refinePoses(views, cams, { rounds = 3, miss = 0, onProgres
             for (const sgn of [1, -1]) {
               const old = c[key];
               c[key] = key === 's' ? old * (1 + sgn * d) : old + sgn * d;
-              const ok = (key !== 'az' || azOk(v, c.az)) && (key !== 'el' || Math.abs(c.el - el0) <= 8 * D2R);
+              const ok = (key !== 'az' || azOk(v, c.az)) && (key !== 'el' || (c.el >= elMin && c.el <= elMax));
               const s = ok ? obj() : -1;
               if (s > cur + 1e-4) { cur = s; improved = true; break; }
               c[key] = old;

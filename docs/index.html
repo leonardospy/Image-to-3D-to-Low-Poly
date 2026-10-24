@@ -37,7 +37,8 @@
   #mthumbs { display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:4px; }
   .mth { position:relative; }
   .mth canvas { width:100%; display:block; border-radius:4px; }
-  .mth span { position:absolute; left:2px; bottom:2px; font-size:10px; background:rgba(0,0,0,.6); padding:0 3px; border-radius:3px; }
+  .mth select { width:100%; padding:1px; font-size:10px; margin-top:2px; }
+  .mth span { position:absolute; left:2px; top:2px; font-size:10px; background:rgba(0,0,0,.6); padding:0 3px; border-radius:3px; }
   details { border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   summary { cursor:pointer; font-weight:600; }
   a { color:var(--acc); }
@@ -52,7 +53,7 @@
   <div><label>Modo</label><select id="mode"><option value="multi">Fotos em volta — 4 a 60 fotos, 3D completo com textura (IA no navegador)</option><option value="single">Qualquer foto — 1 foto, IA no navegador (relevo 3D)</option><option value="local">Meu PC — TRELLIS.2, 3D completo (gerador local ligado)</option><option value="turntable">Mesa giratória — 8 a 72 fotos, sem IA</option></select></div>
   <div id="multi">
     <small>Tire de 16 a 36 fotos andando em volta do objeto, na mesma distância e altura, com o objeto inteiro no quadro. Comece pela frente. Qualquer fundo serve. Tudo roda aqui no navegador: a IA recorta o objeto, as posições da câmera são calculadas pelas silhuetas e a textura vem das próprias fotos.</small>
-    <div id="mdrop" class="dz">Arraste as fotos aqui, na ordem da volta<br><small>ou clique para escolher</small></div>
+    <div id="mdrop" class="dz">Arraste as fotos aqui, na ordem da volta<br><small>ou clique para escolher. Fora de ordem? Marque a vista embaixo de cada foto.</small></div>
     <input id="mfiles" type="file" accept="image/*" multiple hidden>
     <div id="mcount"></div>
     <div id="mthumbs"></div>
@@ -61,6 +62,7 @@
     <details><summary>Ajustes (o automático costuma bastar)</summary>
       <div class="row" style="margin-top:8px"><div><label>Volta</label><select id="mspan"><option value="auto">Automática</option><option value="360">Completa (360°)</option><option value="180">Meia volta (180°)</option><option value="90">Só a frente (90°)</option></select></div><div><label>Sentido (visto de cima)</label><select id="mdir"><option value="auto">Detectar</option><option value="ccw">Anti-horário</option><option value="cw">Horário</option></select></div></div>
       <div class="row" style="margin-top:8px"><div><label>Simetria</label><select id="msym"><option value="auto">Pela descrição</option><option value="none">Nenhuma</option><option value="mirror">Espelhada</option><option value="rot">De revolução</option></select></div><div><label>Maior medida real (m)</label><input id="msize" type="number" step="0.01" min="0.01" placeholder="1"></div></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="mvaried"> Fotos de alturas e zoom bem diferentes (ligado sozinho se você marcar a vista das fotos)</label>
       <label class="chk" style="margin-top:8px"><input type="checkbox" id="mground" checked> Objeto apoiado no chão ou numa mesa (corta o volume abaixo dele)</label>
     </details>
     <button id="mgo" disabled>Gerar modelo 3D</button>

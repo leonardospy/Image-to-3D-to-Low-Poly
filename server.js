@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runJob } from './lib/pipeline.js';
 import { buildModels } from './lib/postprocess.js';
 import { locateTools } from './lib/tools.js';
-import { runAiJob, runHunyuanJob, runTrellisJob, comfyAvailable, aiPython } from './lib/ai.js';
+import { runAiJob, runHunyuanJob, runTrellisJob, comfyAvailable, releaseComfy, aiPython } from './lib/ai.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8')); } catch {}
@@ -85,7 +85,7 @@ app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   task
     .then((stats) => { job.status = 'done'; job.stats = stats; })
     .catch((e) => { job.status = 'error'; job.error = e.message; log(`ERRO: ${e.message}`); })
-    .finally(() => emit(job));
+    .finally(() => { emit(job); releaseComfy(); });
   res.json({ id: job.id, photos: files.length });
 });
 
