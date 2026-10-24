@@ -11,6 +11,7 @@ HY = os.environ.get("HUNYUAN_DIR") or os.path.join(HERE, "Hunyuan3D-2")
 if not os.path.isdir(HY):
     HY = "D:/Projetos Claude/Gerando 3D/ai/Hunyuan3D-2"
 sys.path.insert(0, HY)
+sys.path.insert(0, HERE)
 
 import torch
 from PIL import Image
@@ -55,6 +56,12 @@ def main():
     out = pipe(image=imgs if multi else imgs["front"], num_inference_steps=steps, guidance_scale=5.0,
                generator=gen, octree_resolution=res, num_chunks=20000, output_type="mesh")
     mesh = export_to_trimesh(out)[0]
+    # cor: projeta as fotos na malha (sem IA)
+    import numpy as np, trimesh
+    from project_colors import project_colors
+    sys.path.insert(0, HERE)
+    cols = project_colors(mesh, [np.array(im.convert("RGBA")) for im in imgs.values()], log=lambda s: print(s, flush=True))
+    mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, vertex_colors=cols)
     mesh.export(out_path)
     print(f"[ia] pronto: {len(mesh.faces)} triangulos", flush=True)
 

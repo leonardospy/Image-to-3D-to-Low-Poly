@@ -79,24 +79,37 @@ fetch('/api/tools').then((r) => r.json()).then((t) => {
 });
 
 let pick = 0;
-const isAi = () => $('engine').value === 'ai';
+const isAi = () => $('engine').value !== 'photo';
+const isHy = () => $('engine').value === 'hunyuan';
 function setPhotos(list) {
-  photos = [...list].filter((f) => /\.(jpe?g|png|tiff?|webp)$/i.test(f.name));
+  photos = [...list].filter((f) => /.(jpe?g|png|tiff?|webp)$/i.test(f.name));
   pick = 0;
   $('count').innerHTML = `<small>${photos.length} foto(s) selecionada(s)</small>`;
   $('picks').innerHTML = '';
   photos.forEach((f, i) => {
+    const cell = document.createElement('div');
     const im = new Image();
     im.src = URL.createObjectURL(f);
     im.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid transparent';
-    im.onclick = () => { pick = i; [...$('picks').children].forEach((c, j) => (c.style.borderColor = j === i ? '#4da3ff' : 'transparent')); };
+    im.onclick = () => { pick = i; [...$('picks').children].forEach((c, j) => (c.firstChild.style.borderColor = j === i ? '#4da3ff' : 'transparent')); };
     if (i === 0) im.style.borderColor = '#4da3ff';
-    $('picks').appendChild(im);
+    const sel = document.createElement('select');
+    sel.className = 'view';
+    sel.innerHTML = '<option value="">ignorar</option><option value="front">frente</option><option value="left">esquerda</option><option value="back">trás</option><option value="right">direita</option>';
+    sel.value = i === 0 ? 'front' : '';
+    sel.style.cssText = 'width:100%;font-size:11px;padding:2px;margin-top:2px';
+    cell.append(im, sel);
+    $('picks').appendChild(cell);
   });
   refreshGo();
 }
 function refreshGo() { $('go').disabled = photos.length < (isAi() ? 1 : 8); }
-$('engine').onchange = () => { $('aiopts').hidden = !isAi(); $('quality').parentElement.hidden = isAi(); refreshGo(); };
+function viewMap() {
+  const m = {};
+  [...$('picks').children].forEach((c, i) => { const v = c.querySelector('select').value; if (v) m[photos[i].name] = v; });
+  return m;
+}
+$('engine').onchange = () => { $('aiopts').hidden = !isAi(); $('quality').parentElement.hidden = isAi(); document.querySelectorAll('#picks select').forEach((s) => (s.hidden = !isHy())); refreshGo(); };
 $('drop').onclick = () => $('files').click();
 $('files').onchange = (e) => setPhotos(e.target.files);
 $('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
@@ -113,7 +126,9 @@ $('go').onclick = async () => {
   fd.append('engine', $('engine').value);
   fd.append('pick', photos[pick]?.name || '');
   fd.append('removeBg', $('rembg').checked ? '1' : '0');
-  (isAi() ? [photos[pick]] : photos).forEach((f) => fd.append('photos', f));
+  fd.append('views', JSON.stringify(isHy() ? viewMap() : {}));
+  const chosen = isHy() ? photos.filter((f) => viewMap()[f.name]) : isAi() ? [photos[pick]] : photos;
+  (chosen.length ? chosen : [photos[0]]).forEach((f) => fd.append('photos', f));
   $('step').innerHTML = '<small>Enviando fotos...</small>';
   const r = await fetch('/api/jobs', { method: 'POST', body: fd });
   const j = await r.json();
@@ -146,3 +161,5 @@ if (qJob) {
   const base = `/files/${qJob}/out/`;
   Promise.all([loadModel('realistic', base + 'realistic.glb'), loadModel('lowpoly', base + 'lowpoly.glb')]).then(() => show('realistic'));
 }
+
+$('engine').onchange();

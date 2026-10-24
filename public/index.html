@@ -36,11 +36,12 @@
   <div id="tools"></div>
   <div><label>Motor</label>
     <select id="engine">
+      <option value="hunyuan">IA Hunyuan3D — 1 a 4 fotos (melhor para carros; licença não comercial)</option>
       <option value="photo">Fotogrametria (sem IA) — 30+ fotos do mesmo objeto</option>
-      <option value="ai">IA imagem→3D (TripoSR) — 1 foto, qualquer cor/ângulo</option>
+      <option value="ai">IA TripoSR — 1 foto (mais simples, qualidade menor)</option>
     </select></div>
   <div id="aiopts" hidden>
-    <small>Clique na foto que será usada (melhor: vista 3/4 frontal, objeto inteiro e nítido).</small>
+    <small>Hunyuan: marque a vista de cada foto (frente, esquerda, trás, direita); fotos "ignorar" não são usadas. TripoSR: clique na foto a usar. Melhor: objeto inteiro, nítido, vistas retas.</small>
     <div id="picks" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px"></div>
     <label class="chk" style="display:flex;gap:6px;margin-top:6px"><input type="checkbox" id="rembg" checked> Remover fundo automaticamente</label>
   </div>

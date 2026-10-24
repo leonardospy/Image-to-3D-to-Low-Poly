@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runJob } from './lib/pipeline.js';
 import { buildModels } from './lib/postprocess.js';
 import { locateTools } from './lib/tools.js';
-import { runAiJob, aiPython } from './lib/ai.js';
+import { runAiJob, runHunyuanJob, aiPython } from './lib/ai.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8')); } catch {}
@@ -43,7 +43,8 @@ app.get('/api/tools', (_req, res) => res.json({ ...locateTools(), ai: !!aiPython
 
 app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   const files = req.files || [];
-  const ai = req.body.engine === 'ai';
+  const hy = req.body.engine === 'hunyuan';
+  const ai = req.body.engine === 'ai' || hy;
   if (ai ? files.length < 1 : files.length < 8) return res.status(400).json({ error: ai ? 'Envie pelo menos 1 foto.' : 'Envie pelo menos 8 fotos (ideal: 30-80).' });
   if (ai && !aiPython()) return res.status(400).json({ error: 'Ambiente de IA nao instalado (veja ai/README.md).' });
   const job = {
@@ -55,7 +56,14 @@ app.post('/api/jobs', upload.array('photos', 300), (req, res) => {
   const step = (s, p) => { job.step = s; job.progress = p; log(`== ${s}`); emit(job); };
   const opts = { quality: req.body.quality, lowPolyTris: Math.max(300, Math.min(100000, +req.body.lowPolyTris || 5000)) };
   const pick = files.find((f) => f.originalname === req.body.pick) || files[0];
-  const task = ai
+  let viewMap = {};
+  try { viewMap = JSON.parse(req.body.views || '{}'); } catch {}
+  const views = {};
+  for (const f of files) if (viewMap[f.originalname]) views[viewMap[f.originalname]] = f.path;
+  if (hy && !Object.keys(views).length) views.front = pick.path;
+  const task = hy
+    ? runHunyuanJob(job, views, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0' }, log, step, job.abort.signal)
+    : ai
     ? runAiJob(job, pick.path, { lowPolyTris: opts.lowPolyTris, removeBg: req.body.removeBg !== '0' }, log, step, job.abort.signal)
     : runJob(job, opts, log, step, job.abort.signal);
   task
