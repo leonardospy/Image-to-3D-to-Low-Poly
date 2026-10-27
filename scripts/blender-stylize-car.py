@@ -245,7 +245,23 @@ groups = [tuple(g) for g in merged]
 labels = majority(labels, len(centers), 2)
 sat = lambda c: (c.max() - c.min()) / max(c.max(), 1e-6)
 # tinta = maior grupo saturado e nao muito escuro; se nao houver, o maior grupo
-paint = next((g for g in groups if sat(g[2]) > 0.25 and g[2].max() > 0.2), groups[0])
+# tinta = cor que mais cobre as laterais (faixa das portas, entre 30% e 62% da altura, normais para os lados)
+zc = cen[:, 2]
+zlo, zhi = zc.min(), zc.max()
+flank = (zc > zlo + 0.3 * (zhi - zlo)) & (zc < zlo + 0.62 * (zhi - zlo)) & (np.abs(nrm[:, 0]) > 0.5)
+cover = {g[0]: float(area[flank & (labels == g[0])].sum()) for g in groups}
+paint = max(groups, key=lambda g: cover[g[0]])
+# tinta sem cor forte (branco, prata, preto): os tons de cinza proximos dela sao a mesma tinta em luz e sombra
+pL, _, _ = to_lab(paint[2][None])[0]
+if hue_chroma(paint[2])[1] < 10:
+    for g in list(groups):
+        if g[0] == paint[0]:
+            continue
+        L, _, _ = to_lab(g[2][None])[0]
+        if hue_chroma(g[2])[1] < 10 and pL - 28 < L < pL + 12:
+            labels[labels == g[0]] = paint[0]
+            groups.remove(g)
+    labels = majority(labels, len(centers), 2)
 
 # vidros: faces acima da cintura do carro, sem a cor da tinta e sem cor forte -> um material de vidro unico
 zs, nz = cen[:, 2], nrm[:, 2]
